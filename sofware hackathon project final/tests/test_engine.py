@@ -68,3 +68,31 @@ def test_s104_prefers_lower_cost_v101_when_deadlines_are_feasible():
     plan = allocate_plan(shipments, vehicles, hubs, routes)
     selected = plan["allocations"].loc[plan["allocations"].shipment_id == "S104"].iloc[0]
     assert selected.vehicle_id == "V101"
+
+
+def test_multi_hub_candidate_is_generated_when_direct_route_is_unavailable():
+    from datetime import datetime
+
+    import pandas as pd
+
+    now = datetime.now()
+    shipment = pd.Series({"shipment_id": "S-MULTI", "current_location": "A", "destination": "D", "weight_kg": 100})
+    routes = pd.DataFrame([
+        {"origin": "A", "destination": "B", "estimated_hours": 2, "route_status": "Active"},
+        {"origin": "B", "destination": "C", "estimated_hours": 2, "route_status": "Active"},
+        {"origin": "C", "destination": "D", "estimated_hours": 2, "route_status": "Active"},
+    ])
+    hubs = pd.DataFrame([
+        {"city": "B", "handling_cost": 100, "operational_status": "Operational"},
+        {"city": "C", "handling_cost": 100, "operational_status": "Operational"},
+    ])
+    vehicles = pd.DataFrame([
+        {"vehicle_id": "V1", "current_location": "A", "route_origin": "A", "route_destination": "B", "capacity_kg": 200, "current_load_kg": 0, "vehicle_status": "Available", "eta": now, "transport_cost": 500},
+        {"vehicle_id": "V2", "current_location": "B", "route_origin": "B", "route_destination": "C", "capacity_kg": 200, "current_load_kg": 0, "vehicle_status": "Available", "eta": now, "transport_cost": 500},
+        {"vehicle_id": "V3", "current_location": "C", "route_origin": "C", "route_destination": "D", "capacity_kg": 200, "current_load_kg": 0, "vehicle_status": "Available", "eta": now, "transport_cost": 500},
+    ])
+    candidates = candidates_for_shipment(shipment, vehicles, hubs, routes, now)
+    multi_hub = [item for item in candidates if item["strategy"] == "MULTI-HUB PIGGYBACK"]
+    assert multi_hub
+    assert multi_hub[0]["vehicle_ids"] == ["V1", "V2", "V3"]
+    assert multi_hub[0]["hub"] == "B + C"

@@ -68,14 +68,42 @@ def candidates_for_shipment(shipment: pd.Series, vehicles: pd.DataFrame, hubs: p
                 continue
             eta_hours = max(travel, (pd.Timestamp(vehicle.eta).to_pydatetime() - now).total_seconds() / 3600)
             candidates.append({"vehicle_id": vehicle.vehicle_id, "strategy": "DIRECT PIGGYBACK", "route": f"{vehicle.route_origin} -> {vehicle.route_destination}", "eta_hours": eta_hours, "capacity_available": available, "transport_cost": float(vehicle.transport_cost), "transfer_cost": 0.0, "hub": None})
-        else:
-            first = route_times.get((vehicle.route_origin, vehicle.route_destination))
-            second = route_times.get((vehicle.route_destination, shipment.destination))
-            transfer_cost = hub_costs.get(vehicle.route_destination)
-            if first is not None and second is not None and transfer_cost is not None:
-                for second_vehicle in vehicles_by_leg.get((vehicle.route_destination, shipment.destination), []):
-                    second_available = max(float(getattr(second_vehicle, "available_capacity_kg", second_vehicle.capacity_kg - second_vehicle.current_load_kg)), 0)
-                    candidates.append({"vehicle_id": f"{vehicle.vehicle_id} + {second_vehicle.vehicle_id}", "vehicle_ids": [vehicle.vehicle_id, second_vehicle.vehicle_id], "strategy": "ONE-HUB PIGGYBACK", "route": f"{vehicle.route_origin} -> {vehicle.route_destination} Hub -> {shipment.destination}", "eta_hours": first + second + 2, "capacity_available": min(available, second_available), "transport_cost": float(vehicle.transport_cost + second_vehicle.transport_cost), "transfer_cost": transfer_cost, "hub": vehicle.route_destination})
+    # Search connected paths with up to three operational transfer hubs.
+    active_edges = list(route_times)
+
+    def paths_from(current: str, destination: str, visited: tuple[str, ...] = ()) -> list[list[str]]:
+        if current == destination:
+            return [[current]]
+        if len(visited) >= 3:
+            return []
+        paths: list[list[str]] = []
+        for origin, next_city in active_edges:
+            if origin != current or next_city in visited or next_city == shipment.current_location:
+                continue
+            if next_city != destination and next_city not in hub_costs:
+                continue
+            for suffix in paths_from(next_city, destination, visited + (current,)):
+                paths.append([current] + suffix)
+        return paths
+
+    for path in paths_from(shipment.current_location, shipment.destination):
+        if len(path) < 3:
+            continue
+        leg_options = [vehicles_by_leg.get((origin, destination), []) for origin, destination in zip(path, path[1:])]
+        if any(not options for options in leg_options):
+            continue
+        # A small bounded Cartesian product is appropriate for the prototype fleet size.
+        combinations: list[list[Any]] = [[]]
+        for options in leg_options:
+            combinations = [prefix + [vehicle] for prefix in combinations for vehicle in options if vehicle.vehicle_id not in {item.vehicle_id for item in prefix}]
+        for combination in combinations:
+            capacities = [max(float(getattr(item, "available_capacity_kg", item.capacity_kg - item.current_load_kg)), 0) for item in combination]
+            route_hours = sum(route_times[(origin, destination)] for origin, destination in zip(path, path[1:]))
+            handling_hours = 2 * (len(path) - 2)
+            first_eta = max(route_times[(path[0], path[1])], (pd.Timestamp(combination[0].eta).to_pydatetime() - now).total_seconds() / 3600)
+            eta_hours = first_eta + route_hours - route_times[(path[0], path[1])] + handling_hours
+            hub_cost = sum(hub_costs[hub] for hub in path[1:-1])
+            candidates.append({"vehicle_id": " + ".join(item.vehicle_id for item in combination), "vehicle_ids": [item.vehicle_id for item in combination], "strategy": "ONE-HUB PIGGYBACK" if len(path) == 3 else "MULTI-HUB PIGGYBACK", "route": " -> ".join(path), "eta_hours": eta_hours, "capacity_available": min(capacities), "transport_cost": float(sum(item.transport_cost for item in combination)), "transfer_cost": float(hub_cost), "hub": " + ".join(path[1:-1])})
     return candidates
 
 
