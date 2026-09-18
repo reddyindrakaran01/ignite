@@ -23,10 +23,10 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 html, body, [class*="css"] { font-family: 'Inter', system-ui, sans-serif; }
-h1, h2, h3, h4, h5, h6, p, label, span, li { color: #0F172A; }
+h1, h2, h3, h4, h5, h6, p, label, span, li { color: #0F172A !important; }
 h1, h2, h3, h4, h5, h6 { letter-spacing: 0; }
 .stApp { background: #F5F7FA; }
-.block-container { padding-top: 1.4rem; max-width: 1540px; }
+.block-container { padding-top: .7rem; max-width: 1600px; }
 .stSidebar, [data-testid="stSidebar"] { background: #0B1F33; }
 [data-testid="stSidebar"] * { color: #F8FAFC !important; }
 [data-testid="stSidebar"] [data-testid="stCaptionContainer"] * { color: #A8C0D4 !important; }
@@ -34,6 +34,22 @@ h1, h2, h3, h4, h5, h6 { letter-spacing: 0; }
 [data-testid="stSidebar"] [data-baseweb="select"] * { color: #0F172A !important; }
 .stButton > button { color: #FFFFFF; background: #00A6A6; border: 1px solid #087F8C; font-weight: 700; border-radius: 8px; min-height: 2.5rem; }
 .stButton > button:hover { color: #FFFFFF; background: #087F8C; border-color: #00A6A6; }
+[data-testid="stSidebar"] [data-testid="stRadio"] > div { gap: .18rem; }
+[data-testid="stSidebar"] [data-testid="stRadio"] label { background: #102A43; border: 1px solid #1D405B; border-radius: 9px; padding: .62rem .7rem; color: #CBD5E1 !important; font-weight: 600; margin: .22rem 0; transition: background .15s ease, border-color .15s ease; }
+[data-testid="stSidebar"] [data-testid="stRadio"] label:hover { background: #173A56; color: #FFFFFF !important; border-color: #22D3EE; transform: translateX(2px); }
+[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked) { background: #00A6A6; color: #FFFFFF !important; border-color: #22D3EE; }
+[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked) p { color: #FFFFFF !important; }
+[data-testid="stSidebar"] [data-testid="stRadio"] input { accent-color: #22D3EE; }
+[data-testid="stSidebar"] [data-testid="stRadio"] label p { font-size: .83rem; }
+[data-testid="stSidebar"] [data-testid="stRadio"] label small { color: #8FB4C8 !important; }
+[data-testid="stSidebar"] [data-testid="stRadio"] label:nth-of-type(1) { border-left: 3px solid #22D3EE; }
+[data-testid="stSidebar"] [data-testid="stRadio"] label:nth-of-type(2) { border-left: 3px solid #2563EB; }
+[data-testid="stSidebar"] [data-testid="stRadio"] label:nth-of-type(3) { border-left: 3px solid #00A6A6; }
+[data-testid="stSidebar"] [data-testid="stRadio"] label:nth-of-type(4) { border-left: 3px solid #16A34A; }
+[data-testid="stSidebar"] [data-testid="stRadio"] label:nth-of-type(5) { border-left: 3px solid #F59E0B; }
+[data-testid="stSidebar"] [data-testid="stRadio"] label:nth-of-type(6) { border-left: 3px solid #64748B; }
+[data-testid="stSidebar"] [data-testid="stRadio"] label:nth-of-type(7) { border-left: 3px solid #F59E0B; }
+[data-testid="stSidebar"] [data-testid="stRadio"] label:nth-of-type(8) { border-left: 3px solid #22D3EE; }
 [data-testid="stMetric"] { background: #FFFFFF; border: 1px solid #D9E2EC; border-radius: 12px; padding: .8rem; }
 [data-testid="stMetricLabel"] p, [data-testid="stMetricValue"] { color: #0F172A !important; }
 [data-testid="stDataFrame"] { border: 1px solid #CBD5E1; border-radius: 8px; }
@@ -41,15 +57,47 @@ h1, h2, h3, h4, h5, h6 { letter-spacing: 0; }
 [data-baseweb="input"], [data-baseweb="textarea"], [data-baseweb="select"] { background: #FFFFFF; }
 [data-baseweb="input"] input, [data-baseweb="textarea"] textarea { color: #0F172A !important; }
 .stCaption, [data-testid="stCaptionContainer"] p { color: #64748B !important; }
-.stAlert p { color: #0F172A !important; }
+.stAlert p, .stAlert span { color: #0F172A !important; }
 .hero { background: #0B1F33; color: #F8FAFC; padding: 1.65rem 2rem; border-radius: 12px; margin-bottom: 1rem; border-left: 5px solid #00A6A6; }
-.hero h1 { color: #F8FAFC; font-size: 2.1rem; margin: 0; }
-.hero p { color: #C7D8E5; margin: .35rem 0 0; font-size: 1rem; }
+.hero h1, .hero h1 span, .hero h1 strong { color: #F8FAFC !important; font-size: 2.1rem; margin: 0; }
+.hero p, .hero p span { color: #C7D8E5 !important; margin: .35rem 0 0; font-size: 1rem; }
 .kpi { background: #FFFFFF; border: 1px solid #D9E2EC; border-left: 4px solid #00A6A6; border-radius: 12px; padding: .85rem; min-height: 92px; box-shadow: 0 2px 8px rgba(15, 23, 42, .04); }
 .kpi-label { color: #64748B; text-transform: uppercase; font-size: .7rem; font-weight: 700; letter-spacing: .08em; }
 .kpi-value { color: #0F172A; font-size: 1.65rem; font-weight: 800; margin-top: .25rem; }
 .section { color: #0F172A; border-bottom: 2px solid #00A6A6; padding-bottom: .35rem; }
 .audit-card { background: #FFFFFF; border: 1px solid #D9E2EC; border-radius: 12px; padding: 1rem; margin-bottom: .75rem; }
+.brand-mark { color: #F8FAFC; font-size: 1.25rem; font-weight: 800; letter-spacing: .08em; }
+.brand-sub { color: #A8C0D4; font-size: .68rem; margin-left: .55rem; }
+.status-online { color: #86EFAC; font-size: .78rem; font-weight: 700; padding-top: .45rem; }
+.top-shell { background: #0B1F33; border-radius: 0 0 12px 12px; padding: .5rem .9rem .35rem; margin: -.7rem -1rem 1.1rem; }
+.top-shell [data-testid="stRadio"] label { color: #CBD5E1 !important; }
+.top-shell [data-testid="stRadio"] label:has(input:checked) { color: #FFFFFF !important; }
+.top-shell [data-testid="stRadio"] label:has(input:checked) p { color: #FFFFFF !important; }
+.top-search input { background: #FFFFFF !important; color: #0F172A !important; }
+.workspace-card { background: #FFFFFF; border: 1px solid #D9E2EC; border-radius: 12px; padding: 1rem; min-height: 100%; box-shadow: 0 2px 8px rgba(15, 23, 42, .04); }
+.workspace-title { color: #0F172A; font-size: .78rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; margin-bottom: .6rem; }
+.queue-row { display: grid; grid-template-columns: 5.2rem 1fr 4rem; align-items: center; gap: .45rem; padding: .62rem 0; border-bottom: 1px solid #E2E8F0; font-size: .78rem; }
+.queue-row:last-child { border-bottom: 0; }
+.queue-priority { font-weight: 800; }
+.queue-critical { color: #EF4444; }
+.queue-high { color: #F59E0B; }
+.queue-medium { color: #2563EB; }
+.queue-normal { color: #64748B; }
+.queue-action { color: #087F8C; font-weight: 700; text-align: right; }
+.sidebar-section { color: #8FB4C8; font-size: .68rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; margin: .9rem 0 .35rem; }
+.sidebar-status { background: #102A43; border: 1px solid #1D405B; border-radius: 9px; padding: .75rem; color: #DCEAF2 !important; font-size: .76rem; line-height: 1.7; }
+.sidebar-status strong { color: #86EFAC !important; }
+.page-kicker { color: #087F8C !important; font-size: .7rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; margin-bottom: .2rem; }
+.module-header { display: flex; align-items: center; justify-content: space-between; background: #FFFFFF; border: 1px solid #D9E2EC; border-left: 4px solid #00A6A6; border-radius: 10px; padding: .75rem 1rem; margin-bottom: 1rem; }
+.module-header-title { color: #0F172A !important; font-weight: 800; font-size: 1.1rem; }
+.module-header-meta { color: #64748B !important; font-size: .78rem; }
+.stMarkdown h2, .stMarkdown h3, .stMarkdown h4 { color: #0F172A !important; }
+[data-testid="stExpander"] summary p, [data-testid="stExpander"] summary span { color: #0F172A !important; }
+[data-testid="stChatInput"] textarea { color: #0F172A !important; background: #FFFFFF !important; }
+.planner-state { background: #E8F1F5; border: 1px solid #8FBCC7; border-left: 4px solid #087F8C; border-radius: 10px; color: #0B1F33 !important; padding: .9rem 1rem; margin: .7rem 0; font-weight: 600; }
+.planner-state strong, .planner-state span { color: #0B1F33 !important; }
+.planner-note { background: #EEF6F8; border: 1px solid #B7DCE2; border-left: 4px solid #22D3EE; border-radius: 10px; color: #102A43 !important; padding: .9rem 1rem; margin: .7rem 0; line-height: 1.45; }
+.planner-note strong, .planner-note span { color: #102A43 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -60,6 +108,23 @@ def money(value: float) -> str:
 
 def kpi(label: str, value: str):
     st.markdown(f'<div class="kpi"><div class="kpi-label">{label}</div><div class="kpi-value">{value}</div></div>', unsafe_allow_html=True)
+
+
+def network_figure(routes: pd.DataFrame, vehicles: pd.DataFrame):
+    """Build the operational network used by the Control Tower and Network page."""
+    edge_counts = routes.merge(vehicles.groupby(["route_origin", "route_destination"], as_index=False).size().rename(columns={"size": "vehicles"}), left_on=["origin", "destination"], right_on=["route_origin", "route_destination"], how="left").fillna({"vehicles": 0})
+    positions = {city: (i % 4, -(i // 4)) for i, city in enumerate(sorted(set(routes.origin) | set(routes.destination)))}
+    figure = go.Figure()
+    for row in edge_counts.itertuples():
+        x0, y0 = positions[row.origin]
+        x1, y1 = positions[row.destination]
+        figure.add_trace(go.Scatter(x=[x0, x1], y=[y0, y1], mode="lines", line={"width": 1 + row.vehicles, "color": "#5B8EA3"}, hovertext=f"{row.origin} → {row.destination} · {int(row.vehicles)} vehicles", showlegend=False))
+        figure.add_annotation(x=x1, y=y1, ax=x0, ay=y0, xref="x", yref="y", axref="x", ayref="y", text="", showarrow=True, arrowhead=3, arrowsize=1.1, arrowwidth=2, arrowcolor="#00A6A6")
+    figure.add_trace(go.Scatter(x=[positions[c][0] for c in positions], y=[positions[c][1] for c in positions], mode="markers", hovertext=list(positions), hovertemplate="%{hovertext}<extra></extra>", marker={"size": 22, "color": "#00A6A6", "line": {"width": 3, "color": "#FFFFFF"}}, showlegend=False))
+    for city, (x_position, y_position) in positions.items():
+        figure.add_annotation(x=x_position, y=y_position, text=f"<b>{city}</b>", showarrow=False, yshift=24, font={"family": "Inter, sans-serif", "size": 12, "color": "#0F172A"}, bgcolor="#FFFFFF", bordercolor="#00A6A6", borderwidth=1, borderpad=4)
+    figure.update_layout(height=390, xaxis={"visible": False, "range": [-.7, 3.7]}, yaxis={"visible": False, "range": [-3.2, .8], "scaleanchor": "x", "scaleratio": 1}, plot_bgcolor="#F8FAFC", paper_bgcolor="#FFFFFF", margin={"l": 8, "r": 8, "t": 8, "b": 8}, hoverlabel={"bgcolor": "#0B1F33", "font": {"color": "#FFFFFF"}})
+    return figure
 
 
 @st.cache_data(show_spinner=False)
@@ -75,28 +140,31 @@ def build_plan(demo: bool, weight_values: tuple[tuple[str, float], ...]):
 
 
 with st.sidebar:
-    st.markdown("## ◈ RELAYX")
-    st.caption("AI Shipment Recovery Control Tower")
-    demo_mode = st.toggle("HACKATHON DEMO MODE", value=True)
-    page = st.radio("Navigate", ["Control Tower", "Shipment Priority", "Recovery Planner", "Global Recovery Plan", "Decision Audit", "Network Intelligence", "What-If Simulator", "AI Logistics Analyzer"])
+    st.markdown('<div class="brand-mark">◈ RELAYX</div><div class="brand-sub">AI SHIPMENT RECOVERY</div>', unsafe_allow_html=True)
+    st.markdown('<div class="status-online">● SYSTEM ONLINE</div>', unsafe_allow_html=True)
     st.divider()
-    st.markdown("**SYSTEM STATUS**\n\n🟢 Optimization engine online\n\n🔵 Live simulation data\n\n🟢 Analyzer ready")
-    st.caption("Risk model: deterministic prototype scoring. No real-world delay prediction is claimed.")
-    with st.expander("Optimization weights"):
+    st.markdown('<div class="sidebar-section">Operations workspace</div>', unsafe_allow_html=True)
+    navigation_labels = ["▦  Control Tower", "◉  Shipment Priority", "⇄  Recovery Planner", "▤  Global Recovery Plan", "✓  Decision Audit", "⌁  Network Intelligence", "◌  What-If Simulator", "✦  AI Logistics Analyzer"]
+    navigation_target = {
+        "▦  Control Tower": "Control Tower", "◉  Shipment Priority": "Shipment Priority", "⇄  Recovery Planner": "Recovery Planner", "▤  Global Recovery Plan": "Global Recovery Plan",
+        "✓  Decision Audit": "Decision Audit", "⌁  Network Intelligence": "Network Intelligence", "◌  What-If Simulator": "What-If Simulator", "✦  AI Logistics Analyzer": "AI Logistics Analyzer",
+    }
+    page = navigation_target[st.radio("Navigate", navigation_labels, label_visibility="collapsed")]
+    st.divider()
+    st.markdown('<div class="sidebar-section">Workspace controls</div>', unsafe_allow_html=True)
+    st.caption("Live synthetic logistics data · deterministic optimization source of truth")
+    with st.expander("Weights"):
         weights = {key: st.slider(key.title(), 0.0, 1.0, float(value), 0.05) for key, value in DEFAULT_WEIGHTS.items()}
+    st.markdown('<div class="sidebar-section">System status</div><div class="sidebar-status"><strong>● Optimization engine online</strong><br>● Live simulation data<br>● Analyzer ready</div>', unsafe_allow_html=True)
 
 try:
-    (shipments, vehicles, hubs, routes), plan = build_plan(demo_mode, tuple(sorted(weights.items())))
+    (shipments, vehicles, hubs, routes), plan = build_plan(False, tuple(sorted(weights.items())))
 except Exception as error:
-    st.error(f"The selected mode could not be loaded: {error}")
-    st.info("Try switching the mode once more or restart the app from the project folder.")
+    st.error(f"The recovery workspace could not be loaded: {error}")
+    st.info("Check the CSV data files and restart the app from the project folder.")
     st.stop()
 
 st.markdown('<div class="hero"><h1>RELAYX · AI SHIPMENT RECOVERY CONTROL TOWER</h1><p>Recover more. Use existing capacity. Move smarter.</p></div>', unsafe_allow_html=True)
-if demo_mode:
-    st.info("HACKATHON DEMO MODE · Controlled scenario with direct piggybacking, shared capacity, one-hub transfer, and escalation.")
-else:
-    st.info("FULL SYNTHETIC MODE · 360 shipments and 72 vehicles using the same validated data contract, scoring, constraints, and optimizer as demo mode.")
 if plan["validation"]:
     st.warning(" · ".join(plan["validation"]))
 
@@ -108,11 +176,38 @@ at_risk = int((shipments_view.deadline_risk_label.isin(["HIGH", "CRITICAL"])).su
 available_vehicles = int((vehicles.vehicle_status != "Unavailable").sum())
 utilization = float(((vehicles.current_load_kg.sum() + allocations.weight_kg.sum()) / vehicles.capacity_kg.sum()) * 100) if not allocations.empty else float((vehicles.current_load_kg.sum() / vehicles.capacity_kg.sum()) * 100)
 
+module_descriptions = {
+    "Shipment Priority": ("SHIPMENT PRIORITY", "Rank misplaced shipments by urgency, risk, value and deadline.", "#2563EB"),
+    "Recovery Planner": ("RECOVERY PLANNER", "Compare feasible direct and one-hub recovery options.", "#00A6A6"),
+    "Global Recovery Plan": ("GLOBAL RECOVERY PLAN", "See the fleet-wide allocation across shared capacity.", "#16A34A"),
+    "Decision Audit": ("DECISION AUDIT", "Inspect what was selected and why alternatives were rejected.", "#F59E0B"),
+    "Network Intelligence": ("NETWORK INTELLIGENCE", "Explore active corridors, hubs, vehicles and route risk.", "#22D3EE"),
+    "What-If Simulator": ("WHAT-IF SIMULATOR", "Stress-test the recovery network against disruption.", "#F59E0B"),
+    "AI Logistics Analyzer": ("AI LOGISTICS ANALYZER", "Ask the agent about the calculated recovery network.", "#22D3EE"),
+}
+if page in module_descriptions:
+    module_title, module_description, module_color = module_descriptions[page]
+    st.markdown(f'<div class="module-header" style="border-left-color:{module_color}"><span class="module-header-title">{module_title}</span><span class="module-header-meta">{module_description}</span></div>', unsafe_allow_html=True)
+
 if page == "Control Tower":
     st.markdown("### Global visibility into misplaced shipments, recovery opportunities, fleet capacity and delivery risk.")
     cols = st.columns(8)
     for col, label, value in zip(cols, ["Misplaced", "Recovered", "Escalated", "At risk", "Critical", "Vehicles online", "Utilization", "Savings"], [len(shipments_view), recovered_count, len(plan["escalated"]), at_risk, critical, available_vehicles, f"{utilization:.1f}%", money(plan["savings"])]):
         with col: kpi(label, str(value))
+    st.write("")
+    network_column, queue_column = st.columns([7, 5], gap="medium")
+    with network_column:
+        st.markdown('<div class="workspace-card"><div class="workspace-title">Recovery network · live route intelligence</div>', unsafe_allow_html=True)
+        st.plotly_chart(network_figure(routes, vehicles), use_container_width=True, config={"displayModeBar": False})
+        st.markdown('</div>', unsafe_allow_html=True)
+    with queue_column:
+        st.markdown('<div class="workspace-card"><div class="workspace-title">Priority queue · action required</div>', unsafe_allow_html=True)
+        for row in shipments_view.head(7).itertuples():
+            priority_class = str(row.priority).lower()
+            status = "ESCALATED" if row.shipment_id in set(plan["escalated"].shipment_id) else "RECOVERY READY"
+            action = "Recover now" if row.recommended_action == "Recover immediately" else "Review route"
+            st.markdown(f'<div class="queue-row"><span class="queue-priority queue-{priority_class}">{row.priority.upper()}</span><span><b>{row.shipment_id}</b> · {row.current_location} → {row.destination}<br><small>{row.remaining_hours:.1f}h remaining · {status}</small></span><span class="queue-action">{action} →</span></div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
     st.write("")
     left, right = st.columns(2)
     with left:
@@ -179,12 +274,12 @@ elif page == "Recovery Planner":
         st.success(f"Recommended: {best.vehicle_id} · {best.strategy} · {money(best.cost)} estimated · {best.eta_hours:.1f}h ETA")
         st.markdown("**Why?** Compatible route, hard capacity feasibility, deadline-safe ETA, then weighted priority/cost/utilization scoring.")
     else:
-        st.error("No feasible piggyback option found for this shipment.")
+        st.markdown('<div class="planner-state">No feasible piggyback option found for this shipment.</div>', unsafe_allow_html=True)
         if rejected_options:
-            st.warning(f"Why: every candidate fails a hard constraint. This shipment has {shipment.remaining_hours:.1f} hours remaining; recovery requires at least one route with enough capacity and an ETA before the deadline.")
+            st.markdown(f'<div class="planner-note"><strong>Why this happened:</strong> every candidate fails a hard constraint. This shipment has {shipment.remaining_hours:.1f} hours remaining; recovery requires at least one route with enough capacity and an ETA before the deadline.</div>', unsafe_allow_html=True)
             st.dataframe(pd.DataFrame(rejected_options), use_container_width=True, hide_index=True)
         else:
-            st.warning("Why: no compatible vehicle or one-hub route was found from the shipment's current location.")
+            st.markdown('<div class="planner-note"><strong>Why this happened:</strong> no compatible vehicle or one-hub route was found from the shipment\'s current location.</div>', unsafe_allow_html=True)
         st.info("Recommended alternatives: dedicated vehicle, next available route, alternate hub, or manual logistics intervention.")
 
 elif page == "Global Recovery Plan":
@@ -192,7 +287,11 @@ elif page == "Global Recovery Plan":
     a, b, c, d = st.columns(4)
     a.metric("Recovered", recovered_count); b.metric("Escalated", len(plan["escalated"])); c.metric("Estimated cost", money(plan["total_cost"])); d.metric("Savings", money(plan["savings"]))
     if not allocations.empty:
-        st.dataframe(allocations[["vehicle_id", "shipment_id", "priority", "weight_kg", "strategy", "route", "cost", "eta_hours", "deadline_margin", "score", "reason"]], use_container_width=True, hide_index=True)
+        allocation_view = allocations[["shipment_id", "vehicle_id", "strategy", "route", "weight_kg", "eta_hours", "deadline_margin", "cost", "priority"]].copy()
+        allocation_view.columns = ["Shipment", "Vehicle(s)", "Strategy", "Route", "Weight kg", "ETA hrs", "Margin hrs", "Est. cost", "Priority"]
+        st.dataframe(allocation_view, use_container_width=True, hide_index=True, column_config={"Est. cost": st.column_config.NumberColumn(format="₹%,.0f"), "ETA hrs": st.column_config.NumberColumn(format="%.1f"), "Margin hrs": st.column_config.NumberColumn(format="%.1f")})
+        with st.expander("View decision details"):
+            st.dataframe(allocations[["shipment_id", "vehicle_id", "strategy", "route", "cost", "eta_hours", "deadline_margin", "score", "reason"]], use_container_width=True, hide_index=True)
     if not plan["escalated"].empty:
         st.markdown("#### Escalations")
         st.dataframe(plan["escalated"][["shipment_id", "destination", "weight_kg", "priority", "reason"]], use_container_width=True, hide_index=True)
