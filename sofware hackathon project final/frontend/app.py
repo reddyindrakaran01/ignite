@@ -321,7 +321,7 @@ available_vehicles = int((vehicles.vehicle_status != "Unavailable").sum())
 utilization = float(((vehicles.current_load_kg.sum() + allocations.weight_kg.sum()) / vehicles.capacity_kg.sum()) * 100) if not allocations.empty else float((vehicles.current_load_kg.sum() / vehicles.capacity_kg.sum()) * 100)
 
 module_descriptions = {
-    "Data Input": ("DATA INPUT", "Manually enter records or upload CSVs through the authenticated API.", "#22D3EE"),
+    "Data Input": ("DATA INPUT", "Upload CSV datasets to update the operational network and recovery plan.", "#22D3EE"),
     "Shipment Priority": ("SHIPMENT PRIORITY", "Rank misplaced shipments by urgency, risk, value and deadline.", "#2563EB"),
     "Recovery Planner": ("RECOVERY PLANNER", "Compare feasible direct, one-hop, and multi-hub recovery opportunities.", "#00A6A6"),
     "Global Recovery Plan": ("GLOBAL RECOVERY PLAN", "See the fleet-wide allocation across shared capacity.", "#16A34A"),
@@ -368,50 +368,35 @@ if page == "Control Tower":
     impact_left, impact_right = st.columns(2)
     with impact_left:
         st.markdown("#### BUSINESS IMPACT")
-<<<<<<< HEAD
-        st.dataframe(pd.DataFrame({"Metric": ["Capacity reused", "Dedicated trips avoided", "On-time recovery", "Estimated recovery cost"], "Value": [f"{allocations.weight_kg.sum() if not allocations.empty else 0:,.0f} kg", f"{recovered_count}", f"{(allocations.deadline_margin.ge(0).mean() * 100 if not allocations.empty else 0):.1f}%", money(plan["total_cost"])]}).astype(str), hide_index=True, use_container_width=True)
+        st.dataframe(
+            pd.DataFrame({
+                "Metric": ["Capacity reused", "Dedicated trips avoided", "On-time recovery", "Estimated recovery cost"],
+                "Value": [
+                    f"{allocations.weight_kg.sum() if not allocations.empty else 0:,.0f} kg",
+                    str(recovered_count),
+                    f"{(allocations.deadline_margin.ge(0).mean() * 100 if not allocations.empty else 0):.1f}%",
+                    money(plan["total_cost"]),
+                ],
+            }),
+            hide_index=True,
+            width="stretch",
+        )
     with impact_right:
         st.markdown("#### RECOVERY IMPACT")
-        st.dataframe(pd.DataFrame({"Metric": ["Shipments considered", "Feasible / recovered", "Shipments escalated", "Vehicles used", "Multi-hop transfers"], "Value": [f"{len(shipments_view)}", f"{recovered_count} / {len(shipments_view)}", f"{len(plan['escalated'])}", f"{allocations.vehicle_id.nunique() if not allocations.empty else 0}", f"{int(allocations.strategy.str.contains('HUB PIGGYBACK').sum()) if not allocations.empty else 0}"]}), hide_index=True, use_container_width=True)
-
-elif page == "Shipment Priority":
-    st.markdown("### Shipment Priority Center")
-    st.caption("Same-lane shipments are ranked first by recovery priority, then grouped into dispatch waves, then matched to the strongest available transfer vehicle.")
-    lane_view, dispatch_view, direct_capacity = build_dispatch_views(shipments_view, vehicles, allocations)
-    st.markdown("#### 1 · Lane priority")
-    st.caption("When multiple shipments share an origin and destination, the lane with the highest urgency and nearest deadline receives attention first.")
-    lane_table = lane_view.rename(columns={"lane": "Origin → destination lane", "shipments": "Shipments", "total_weight_kg": "Total weight (kg)", "highest_priority_score": "Highest priority score", "nearest_deadline_hours": "Nearest deadline (hrs)", "dispatch_waves": "Dispatch waves"})
-    st.dataframe(lane_table, use_container_width=True, hide_index=True, column_config={"Highest priority score": st.column_config.ProgressColumn("Highest priority score", min_value=0, max_value=1)})
-
-    lane_options = lane_view.lane.tolist()
-    selected_lane = st.selectbox("Select a lane to plan dispatch priority", lane_options)
-    selected_dispatch = dispatch_view[dispatch_view.lane == selected_lane].copy()
-    selected_dispatch["Dispatch priority"] = selected_dispatch["dispatch_priority"]
-    selected_dispatch = selected_dispatch.sort_values("Dispatch priority")
-    st.markdown("#### 2 · Shipment dispatch sequence")
-    st.caption("Within the selected lane, the highest-priority shipments are assigned the earliest dispatch sequence. Dispatch waves show how many capacity batches are required.")
-    dispatch_table = selected_dispatch[["dispatch_priority", "dispatch_wave", "shipment_id", "priority", "weight_kg", "remaining_hours", "deadline_risk_label", "priority_score", "selected_vehicle", "dispatch_status"]].rename(columns={"dispatch_priority": "Dispatch priority", "dispatch_wave": "Dispatch wave", "shipment_id": "Shipment ID", "priority": "Recovery priority", "weight_kg": "Weight (kg)", "remaining_hours": "Time to deadline (hrs)", "deadline_risk_label": "Recovery risk", "priority_score": "Priority score", "selected_vehicle": "Selected vehicle", "dispatch_status": "Recovery status"})
-    st.dataframe(dispatch_table, use_container_width=True, hide_index=True, column_config={"Priority score": st.column_config.ProgressColumn("Priority score", min_value=0, max_value=1)})
-
-    st.markdown("#### 3 · Candidate vehicle selection")
-    st.caption("Vehicles are ranked for the selected lane by route compatibility, usable capacity, availability, ETA, and estimated transport cost.")
-    origin, destination = selected_lane.split(" → ")
-    vehicle_table = direct_capacity[(direct_capacity.route_origin == origin) & (direct_capacity.route_destination == destination)].copy()
-    if vehicle_table.empty:
-        st.info("No vehicles currently satisfy this lane's direct recovery constraints. Consider an intermediate-hub recovery path or escalation.")
-    else:
-        vehicle_table["vehicle_selection_priority"] = vehicle_table.apply(lambda row: (row.available_capacity_kg > 0, row.vehicle_status == "Available", -row.transport_cost), axis=1)
-        vehicle_table = vehicle_table.sort_values("vehicle_selection_priority", ascending=False).reset_index(drop=True)
-        vehicle_table.insert(0, "Vehicle priority", range(1, len(vehicle_table) + 1))
-        vehicle_table["route_compatibility"] = "DIRECT ROUTE"
-        vehicle_table["selection_reason"] = vehicle_table.apply(lambda row: f"{row.available_capacity_kg:.0f}kg available · {row.vehicle_status.lower()} · estimated cost {money(row.transport_cost)}", axis=1)
-        vehicle_table = vehicle_table.rename(columns={"vehicle_id": "Candidate vehicle", "vehicle_status": "Vehicle availability", "available_capacity_kg": "Capacity available (kg)", "eta": "Estimated arrival", "route_destination": "Destination", "selection_reason": "Selection rationale"})
-        st.dataframe(vehicle_table[["Vehicle priority", "Candidate vehicle", "route_compatibility", "Vehicle availability", "Capacity available (kg)", "transport_cost", "Estimated arrival", "Selection rationale"]], use_container_width=True, hide_index=True, column_config={"transport_cost": st.column_config.NumberColumn("Estimated transport cost", format="₹%,.0f")})
-=======
-        st.dataframe(pd.DataFrame({"Metric": ["Capacity reused", "Dedicated trips avoided", "On-time recovery", "Estimated recovery cost"], "Value": [f"{allocations.weight_kg.sum() if not allocations.empty else 0:,.0f} kg", str(recovered_count), f"{(allocations.deadline_margin.ge(0).mean() * 100 if not allocations.empty else 0):.1f}%", money(plan["total_cost"])]}), hide_index=True, width="stretch")
-    with impact_right:
-        st.markdown("#### RECOVERY IMPACT")
-        st.dataframe(pd.DataFrame({"Metric": ["Shipments considered", "Feasible / recovered", "Shipments escalated", "Vehicles used", "One-hop transfers"], "Value": [str(len(shipments_view)), f"{recovered_count} / {len(shipments_view)}", str(len(plan["escalated"])), str(allocations.vehicle_id.nunique() if not allocations.empty else 0), str(int(allocations.strategy.eq("ONE-HUB PIGGYBACK").sum()) if not allocations.empty else 0)]}), hide_index=True, width="stretch")
+        st.dataframe(
+            pd.DataFrame({
+                "Metric": ["Shipments considered", "Feasible / recovered", "Shipments escalated", "Vehicles used", "One-hop transfers"],
+                "Value": [
+                    str(len(shipments_view)),
+                    f"{recovered_count} / {len(shipments_view)}",
+                    str(len(plan["escalated"])),
+                    str(allocations.vehicle_id.nunique() if not allocations.empty else 0),
+                    str(int(allocations.strategy.eq("ONE-HUB PIGGYBACK").sum()) if not allocations.empty else 0),
+                ],
+            }),
+            hide_index=True,
+            width="stretch",
+        )
     st.markdown("#### Shipment status monitor")
     status_view = shipment_status_table(shipments_view, plan)
     status_search = st.text_input("Search shipment status", placeholder="Shipment, location, priority, or status")
@@ -437,7 +422,6 @@ elif page == "Shipment Priority":
     display = display.rename(columns={"current_location": "Current location", "destination": "Destination", "weight_kg": "Weight (kg)", "priority": "Recovery priority", "deadline": "Deadline", "remaining_hours": "Time to deadline (hrs)", "delay_probability": "Delay probability", "deadline_risk_label": "Recovery risk", "priority_score": "Priority score", "recommended_action": "Recommended action"})
     st.dataframe(display[["Rank", "shipment_id", "Current location", "Destination", "Weight (kg)", "Recovery priority", "Deadline", "Time to deadline (hrs)", "Delay probability", "Recovery risk", "Priority score", "Recommended action"]], width="stretch", hide_index=True, column_config={"Priority score": st.column_config.ProgressColumn("Contribution to priority score", min_value=0, max_value=1), "Delay probability": st.column_config.ProgressColumn("Delay probability", min_value=0, max_value=1)})
     st.caption("Recovery priority is calculated from urgency, deadline pressure, business priority, delay probability, shipment value, and route risk.")
->>>>>>> 1cbcf67 (Add changes to project)
 
 elif page == "Recovery Planner":
     selected_id = st.selectbox("Select shipment for recovery", shipments_view.shipment_id.tolist())
@@ -445,43 +429,6 @@ elif page == "Recovery Planner":
     a, b, c, d = st.columns(4)
     a.metric("Shipment", selected_id); b.metric("Priority", shipment.priority); c.metric("Weight", f"{shipment.weight_kg:.0f} kg"); d.metric("Deadline risk", shipment.deadline_risk_label)
     st.write(f"Current route: **{shipment.current_location} → {shipment.destination}** · Time to deadline: **{shipment.remaining_hours:.1f} hrs** · Delay probability: **{shipment.delay_probability:.0%}**")
-<<<<<<< HEAD
-    options = []
-    rejected_options = []
-    from backend.engine import candidates_for_shipment
-    for candidate in candidates_for_shipment(shipment, vehicles, hubs, routes):
-        candidate["deadline_margin"] = float(shipment.remaining_hours - candidate["eta_hours"])
-        candidate["cost"] = (candidate["transport_cost"] * shipment.weight_kg / max(candidate["capacity_available"], shipment.weight_kg)) + candidate["transfer_cost"]
-        candidate["score"] = (.35 * min(max(candidate["deadline_margin"], 0) / max(shipment.remaining_hours, 1), 1) + .20 * shipment.priority_score + .40 * (1 - min(candidate["cost"] / 8000, 1)) + .05 * min(shipment.weight_kg / max(candidate["capacity_available"], shipment.weight_kg), 1))
-        candidate["feasible"] = candidate["capacity_available"] >= shipment.weight_kg and candidate["deadline_margin"] >= 0
-        if candidate["feasible"]:
-            options.append(candidate)
-        else:
-            reasons = []
-            if candidate["capacity_available"] < shipment.weight_kg:
-                reasons.append(f"capacity {candidate['capacity_available']:.0f}kg < {shipment.weight_kg:.0f}kg required")
-            if candidate["deadline_margin"] < 0:
-                reasons.append(f"ETA misses deadline by {abs(candidate['deadline_margin']):.1f}h")
-            rejected_options.append({"vehicle_id": candidate["vehicle_id"], "strategy": candidate["strategy"], "eta_hours": round(candidate["eta_hours"], 1), "capacity_available": round(candidate["capacity_available"], 1), "reason": "; ".join(reasons)})
-    if options:
-        options_df = pd.DataFrame(sorted(options, key=lambda x: x.get("score", 0), reverse=True))
-        best = options_df.iloc[0]
-        
-        direct_feasible = options_df[options_df["strategy"] == "DIRECT PIGGYBACK"]
-        if direct_feasible.empty:
-            st.warning("No feasible direct vehicles available (due to missing capacity or ETA constraints not satisfied). Falling back to intermediate transfer hubs...")
-
-        options_df["hub_display"] = options_df["hub"].fillna("-")
-        candidate_view = options_df[["vehicle_id", "strategy", "route", "hub_display", "cost", "eta_hours", "capacity_available", "transfer_cost"]].rename(columns={"vehicle_id": "Candidate vehicle", "strategy": "Recovery strategy", "route": "Route path", "hub_display": "Transfer Hub(s)", "cost": "Recovery cost", "eta_hours": "Estimated arrival (hrs)", "capacity_available": "Capacity available (kg)", "transfer_cost": "Transfer cost"})
-        st.dataframe(candidate_view, use_container_width=True, hide_index=True)
-        
-        st.success(f"Selected recovery opportunity: {best.vehicle_id} · {best.strategy} · {money(best.cost)} estimated · {best.eta_hours:.1f} hrs to arrival")
-        
-        if best.strategy != "DIRECT PIGGYBACK":
-            st.markdown(f"**Why intermediate hubs were used:** Direct routes were unavailable or failed ETA constraints. A {best.strategy.lower()} through **{best.hub}** was successfully added because it satisfies the ETA and capacity constraints.")
-        else:
-            st.markdown("**Why this opportunity was selected:** It satisfies route, capacity, and deadline constraints, then ranks highest on deadline safety, priority satisfaction, estimated cost, and utilization.")
-=======
     options_df = evaluate_candidates(shipment, vehicles, hubs, routes)
     feasible_options = options_df[options_df.feasible].copy() if not options_df.empty else options_df
     if not feasible_options.empty:
@@ -490,7 +437,6 @@ elif page == "Recovery Planner":
         best = feasible_options.iloc[0]
         st.success(f"Selected recovery opportunity: {best.vehicle_id} · {best.strategy} · {money(best.cost)} estimated · {best.eta_hours:.1f} hrs to arrival")
         st.markdown(f"**Why this opportunity was selected:** {best.reason}")
->>>>>>> 1cbcf67 (Add changes to project)
     else:
         st.markdown('<div class="planner-state">No feasible piggyback option found for this shipment.</div>', unsafe_allow_html=True)
         if not options_df.empty:
@@ -506,16 +452,10 @@ elif page == "Global Recovery Plan":
     a, b, c, d = st.columns(4)
     a.metric("Shipments recovered", recovered_count); b.metric("Shipments escalated", len(plan["escalated"])); c.metric("Recovery cost", money(plan["total_cost"])); d.metric("Estimated cost impact", money(plan["savings"]))
     if not allocations.empty:
-<<<<<<< HEAD
         allocation_view = allocations[["shipment_id", "vehicle_id", "strategy", "route", "hub", "weight_kg", "eta_hours", "deadline_margin", "cost", "priority"]].copy()
         allocation_view["hub"] = allocation_view["hub"].fillna("-")
         allocation_view.columns = ["Shipment", "Vehicle(s)", "Strategy", "Route", "Transfer Hub(s)", "Weight kg", "ETA hrs", "Margin hrs", "Est. cost", "Priority"]
-        st.dataframe(allocation_view, use_container_width=True, hide_index=True, column_config={"Est. cost": st.column_config.NumberColumn(format="₹%,.0f"), "ETA hrs": st.column_config.NumberColumn(format="%.1f"), "Margin hrs": st.column_config.NumberColumn(format="%.1f")})
-=======
-        allocation_view = allocations[["shipment_id", "vehicle_id", "strategy", "route", "weight_kg", "eta_hours", "deadline_margin", "cost", "priority"]].copy()
-        allocation_view.columns = ["Shipment", "Vehicle(s)", "Strategy", "Route", "Weight kg", "ETA hrs", "Margin hrs", "Est. cost", "Priority"]
         st.dataframe(allocation_view, width="stretch", hide_index=True, column_config={"Est. cost": st.column_config.NumberColumn(format="₹%,.0f"), "ETA hrs": st.column_config.NumberColumn(format="%.1f"), "Margin hrs": st.column_config.NumberColumn(format="%.1f")})
->>>>>>> 1cbcf67 (Add changes to project)
         with st.expander("Inspect calculated allocation details"):
             st.dataframe(allocations[["shipment_id", "vehicle_id", "strategy", "route", "cost", "eta_hours", "deadline_margin", "score", "reason"]], width="stretch", hide_index=True)
     if not plan["escalated"].empty:
