@@ -68,13 +68,13 @@ def candidates_for_shipment(shipment: pd.Series, vehicles: pd.DataFrame, hubs: p
                 continue
             eta_hours = max(travel, (pd.Timestamp(vehicle.eta).to_pydatetime() - now).total_seconds() / 3600)
             candidates.append({"vehicle_id": vehicle.vehicle_id, "strategy": "DIRECT PIGGYBACK", "route": f"{vehicle.route_origin} -> {vehicle.route_destination}", "eta_hours": eta_hours, "capacity_available": available, "transport_cost": float(vehicle.transport_cost), "transfer_cost": 0.0, "hub": None})
-    # Search connected paths with up to three operational transfer hubs.
+    # Search connected paths with up to four operational transfer hubs.
     active_edges = list(route_times)
 
     def paths_from(current: str, destination: str, visited: tuple[str, ...] = ()) -> list[list[str]]:
         if current == destination:
             return [[current]]
-        if len(visited) >= 3:
+        if len(visited) >= 5:
             return []
         paths: list[list[str]] = []
         for origin, next_city in active_edges:

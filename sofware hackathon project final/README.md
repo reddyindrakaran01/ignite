@@ -1,6 +1,6 @@
 # Intelligent Shipment Recovery Control Tower
 
-A hackathon prototype for **SH-205: Intelligent Shipment Piggybacking**. It treats recovery as a fleet-wide allocation problem: multiple misplaced shipments compete for limited capacity across direct routes and one-hub transfers.
+A hackathon prototype for **SH-205: Intelligent Shipment Piggybacking**. It treats recovery as a fleet-wide allocation problem: multiple misplaced shipments compete for limited capacity across direct routes, one-hub, and multi-hub transfers.
 
 > This is a hackathon prototype using synthetic logistics data. Costs, ETAs, and risk scores are estimates, not operational commitments.
 
@@ -12,14 +12,14 @@ python -m pip install -r requirements.txt
 streamlit run frontend/app.py
 ```
 
-The app starts in **HACKATHON DEMO MODE** with a small scenario designed to show shared capacity, one-hop transfer, deadline pressure, and escalation. Turn demo mode off in the sidebar to generate 360 reproducible synthetic shipments and 72 vehicles.
+The app starts in **HACKATHONpython --version DEMO MODE** with a small scenario designed to show shared capacity, multi-hop transfer, deadline pressure, and escalation. Turn demo mode off in the sidebar to generate 360 reproducible synthetic shipments and 72 vehicles.
 
 ## Architecture
 
 - `data/shipments.csv`, `data/vehicles.csv`, `data/hubs.csv`, `data/routes.csv`: editable demo CSV files used by the application.
 - `backend/data_loader.py`: CSV loading, runtime date handling, and larger generated CSV bundle creation.
 - `backend/data_generator.py`: reproducible demo and synthetic datasets.
-- `backend/engine.py`: validation, risk/priority scoring, direct and one-hub candidate generation, and global greedy allocation.
+- `backend/engine.py`: validation, risk/priority scoring, direct, one-hub, and multi-hub candidate generation, and global greedy allocation.
 - `backend/ai.py`: deterministic explanation layer with optional OpenAI-compatible integration point.
 - `frontend/app.py`: Streamlit control tower, planner, global plan, network, simulator, and analyzer.
 - `ui/visualization.py`: reusable semantic Plotly charts for the RELAYX control tower.
@@ -29,7 +29,7 @@ The app starts in **HACKATHON DEMO MODE** with a small scenario designed to show
 
 1. Validate and normalize records.
 2. Score urgency, deadline pressure, priority, delay probability, value, and route risk.
-3. Generate feasible direct and one-hub candidates.
+3. Generate feasible direct, one-hub, and multi-hub candidates.
 4. Rank candidates using deadline safety, priority satisfaction, cost, and utilization.
 5. Allocate all shipments in priority order while reserving actual vehicle capacity.
 6. Mark anything left without a feasible candidate as escalated with a transparent reason.

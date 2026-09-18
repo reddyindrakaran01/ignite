@@ -130,9 +130,9 @@ def network_figure(routes: pd.DataFrame, vehicles: pd.DataFrame):
     for row in edge_counts.itertuples():
         x0, y0 = positions[row.origin]
         x1, y1 = positions[row.destination]
-        figure.add_trace(go.Scatter(x=[x0, x1], y=[y0, y1], mode="lines", line={"width": 1 + row.vehicles, "color": "#5B8EA3"}, hovertext=f"{row.origin} → {row.destination} · {int(row.vehicles)} vehicles", showlegend=False))
-        figure.add_annotation(x=x1, y=y1, ax=x0, ay=y0, xref="x", yref="y", axref="x", ayref="y", text="", showarrow=True, arrowhead=3, arrowsize=1.1, arrowwidth=2, arrowcolor="#00A6A6")
-    figure.add_trace(go.Scatter(x=[positions[c][0] for c in positions], y=[positions[c][1] for c in positions], mode="markers", hovertext=list(positions), hovertemplate="%{hovertext}<extra></extra>", marker={"size": 22, "color": "#00A6A6", "line": {"width": 3, "color": "#FFFFFF"}}, showlegend=False))
+        figure.add_trace(go.Scatter(x=[x0, x1], y=[y0, y1], mode="lines", line={"width": 1.5, "color": "#5B8EA3"}, hovertext=f"{row.origin} → {row.destination} · {int(row.vehicles)} vehicles", showlegend=False))
+        figure.add_annotation(x=x1, y=y1, ax=x0, ay=y0, xref="x", yref="y", axref="x", ayref="y", text="", showarrow=True, arrowhead=3, arrowsize=1.5, arrowwidth=2, arrowcolor="#00A6A6")
+    figure.add_trace(go.Scatter(x=[positions[c][0] for c in positions], y=[positions[c][1] for c in positions], mode="markers", hovertext=list(positions), hovertemplate="%{hovertext}<extra></extra>", marker={"size": 12, "color": "#00A6A6", "line": {"width": 1.5, "color": "#FFFFFF"}}, showlegend=False))
     for city, (x_position, y_position) in positions.items():
         figure.add_annotation(x=x_position, y=y_position, text=f"<b>{city}</b>", showarrow=False, yshift=24, font={"family": "Inter, sans-serif", "size": 12, "color": "#0F172A"}, bgcolor="#FFFFFF", bordercolor="#00A6A6", borderwidth=1, borderpad=4)
     figure.update_layout(height=390, xaxis={"visible": False, "range": [-.7, 3.7]}, yaxis={"visible": False, "range": [-3.2, .8], "scaleanchor": "x", "scaleratio": 1}, plot_bgcolor="#F8FAFC", paper_bgcolor="#FFFFFF", margin={"l": 8, "r": 8, "t": 8, "b": 8}, hoverlabel={"bgcolor": "#0B1F33", "font": {"color": "#FFFFFF"}})
@@ -257,7 +257,7 @@ if page == "Control Tower":
         st.dataframe(pd.DataFrame({"Metric": ["Capacity reused", "Dedicated trips avoided", "On-time recovery", "Estimated recovery cost"], "Value": [f"{allocations.weight_kg.sum() if not allocations.empty else 0:,.0f} kg", f"{recovered_count}", f"{(allocations.deadline_margin.ge(0).mean() * 100 if not allocations.empty else 0):.1f}%", money(plan["total_cost"])]}).astype(str), hide_index=True, use_container_width=True)
     with impact_right:
         st.markdown("#### RECOVERY IMPACT")
-        st.dataframe(pd.DataFrame({"Metric": ["Shipments considered", "Feasible / recovered", "Shipments escalated", "Vehicles used", "One-hop transfers"], "Value": [f"{len(shipments_view)}", f"{recovered_count} / {len(shipments_view)}", f"{len(plan['escalated'])}", f"{allocations.vehicle_id.nunique() if not allocations.empty else 0}", f"{int(allocations.strategy.eq('ONE-HUB PIGGYBACK').sum()) if not allocations.empty else 0}"]}), hide_index=True, use_container_width=True)
+        st.dataframe(pd.DataFrame({"Metric": ["Shipments considered", "Feasible / recovered", "Shipments escalated", "Vehicles used", "Multi-hop transfers"], "Value": [f"{len(shipments_view)}", f"{recovered_count} / {len(shipments_view)}", f"{len(plan['escalated'])}", f"{allocations.vehicle_id.nunique() if not allocations.empty else 0}", f"{int(allocations.strategy.str.contains('HUB PIGGYBACK').sum()) if not allocations.empty else 0}"]}), hide_index=True, use_container_width=True)
 
 elif page == "Shipment Priority":
     st.markdown("### Shipment Priority Center")
@@ -318,11 +318,22 @@ elif page == "Recovery Planner":
             rejected_options.append({"vehicle_id": candidate["vehicle_id"], "strategy": candidate["strategy"], "eta_hours": round(candidate["eta_hours"], 1), "capacity_available": round(candidate["capacity_available"], 1), "reason": "; ".join(reasons)})
     if options:
         options_df = pd.DataFrame(sorted(options, key=lambda x: x.get("score", 0), reverse=True))
-        candidate_view = options_df[["vehicle_id", "strategy", "route", "cost", "eta_hours", "capacity_available", "transfer_cost"]].rename(columns={"vehicle_id": "Candidate vehicle", "strategy": "Recovery strategy", "route": "Current route", "cost": "Recovery cost", "eta_hours": "Estimated arrival (hrs)", "capacity_available": "Capacity available (kg)", "transfer_cost": "Transfer cost"})
-        st.dataframe(candidate_view, use_container_width=True, hide_index=True)
         best = options_df.iloc[0]
+        
+        direct_feasible = options_df[options_df["strategy"] == "DIRECT PIGGYBACK"]
+        if direct_feasible.empty:
+            st.warning("No feasible direct vehicles available (due to missing capacity or ETA constraints not satisfied). Falling back to intermediate transfer hubs...")
+
+        options_df["hub_display"] = options_df["hub"].fillna("-")
+        candidate_view = options_df[["vehicle_id", "strategy", "route", "hub_display", "cost", "eta_hours", "capacity_available", "transfer_cost"]].rename(columns={"vehicle_id": "Candidate vehicle", "strategy": "Recovery strategy", "route": "Route path", "hub_display": "Transfer Hub(s)", "cost": "Recovery cost", "eta_hours": "Estimated arrival (hrs)", "capacity_available": "Capacity available (kg)", "transfer_cost": "Transfer cost"})
+        st.dataframe(candidate_view, use_container_width=True, hide_index=True)
+        
         st.success(f"Selected recovery opportunity: {best.vehicle_id} · {best.strategy} · {money(best.cost)} estimated · {best.eta_hours:.1f} hrs to arrival")
-        st.markdown("**Why this opportunity was selected:** It satisfies route, capacity, and deadline constraints, then ranks highest on deadline safety, priority satisfaction, estimated cost, and utilization.")
+        
+        if best.strategy != "DIRECT PIGGYBACK":
+            st.markdown(f"**Why intermediate hubs were used:** Direct routes were unavailable or failed ETA constraints. A {best.strategy.lower()} through **{best.hub}** was successfully added because it satisfies the ETA and capacity constraints.")
+        else:
+            st.markdown("**Why this opportunity was selected:** It satisfies route, capacity, and deadline constraints, then ranks highest on deadline safety, priority satisfaction, estimated cost, and utilization.")
     else:
         st.markdown('<div class="planner-state">No feasible piggyback option found for this shipment.</div>', unsafe_allow_html=True)
         if rejected_options:
@@ -338,8 +349,9 @@ elif page == "Global Recovery Plan":
     a, b, c, d = st.columns(4)
     a.metric("Shipments recovered", recovered_count); b.metric("Shipments escalated", len(plan["escalated"])); c.metric("Recovery cost", money(plan["total_cost"])); d.metric("Estimated cost impact", money(plan["savings"]))
     if not allocations.empty:
-        allocation_view = allocations[["shipment_id", "vehicle_id", "strategy", "route", "weight_kg", "eta_hours", "deadline_margin", "cost", "priority"]].copy()
-        allocation_view.columns = ["Shipment", "Vehicle(s)", "Strategy", "Route", "Weight kg", "ETA hrs", "Margin hrs", "Est. cost", "Priority"]
+        allocation_view = allocations[["shipment_id", "vehicle_id", "strategy", "route", "hub", "weight_kg", "eta_hours", "deadline_margin", "cost", "priority"]].copy()
+        allocation_view["hub"] = allocation_view["hub"].fillna("-")
+        allocation_view.columns = ["Shipment", "Vehicle(s)", "Strategy", "Route", "Transfer Hub(s)", "Weight kg", "ETA hrs", "Margin hrs", "Est. cost", "Priority"]
         st.dataframe(allocation_view, use_container_width=True, hide_index=True, column_config={"Est. cost": st.column_config.NumberColumn(format="₹%,.0f"), "ETA hrs": st.column_config.NumberColumn(format="%.1f"), "Margin hrs": st.column_config.NumberColumn(format="%.1f")})
         with st.expander("Inspect calculated allocation details"):
             st.dataframe(allocations[["shipment_id", "vehicle_id", "strategy", "route", "cost", "eta_hours", "deadline_margin", "score", "reason"]], use_container_width=True, hide_index=True)
@@ -360,20 +372,21 @@ elif page == "Decision Audit":
         for row in allocations.itertuples():
             audit_rows.append({"Shipment": row.shipment_id, "Selected vehicle(s)": row.vehicle_id, "Strategy": row.strategy, "Cost": money(row.cost), "ETA": f"{row.eta_hours:.1f} hrs", "Deadline margin": f"{row.deadline_margin:.1f} hrs", "Priority score": f"{row.priority_score:.2f}", "Status": "RECOVERED"})
         st.dataframe(pd.DataFrame(audit_rows), use_container_width=True, hide_index=True)
-        for row in allocations.itertuples():
-            with st.expander(f"{row.shipment_id} · {row.vehicle_id} · {row.strategy}"):
-                st.markdown('<div class="audit-card">', unsafe_allow_html=True)
-                st.markdown(f"**WHAT WAS DECIDED?** {row.reason}")
-                st.markdown("**WHY WAS IT SELECTED?**")
-                factors = pd.DataFrame({"Decision factor": ["Route compatibility", "Deadline compliance", "Capacity availability", "Cost efficiency", "Priority satisfaction"], "Assessment": ["100%", f"{max(0, min(row.deadline_margin / max(row.eta_hours, 1), 1) * 100):.0f}%", "FEASIBLE", f"{max(0, (1 - row.cost / 8000) * 100):.0f}%", f"{row.priority_score * 100:.0f}%"]})
-                st.dataframe(factors, hide_index=True, use_container_width=True)
-                rejected = plan["rejected"]
-                if not rejected.empty:
-                    rejected_for_shipment = rejected[rejected.shipment_id == row.shipment_id]
-                    if not rejected_for_shipment.empty:
-                        st.markdown("**WHY WERE ALTERNATIVES NOT SELECTED?**")
-                        st.dataframe(rejected_for_shipment, hide_index=True, use_container_width=True)
-                st.markdown('</div>', unsafe_allow_html=True)
+        selected_audit_id = st.selectbox("Select shipment to inspect audit details", allocations.shipment_id.tolist())
+        row = allocations[allocations.shipment_id == selected_audit_id].iloc[0]
+        st.markdown(f"#### Audit Details: {row.shipment_id} · {row.vehicle_id} · {row.strategy}")
+        st.markdown('<div class="audit-card">', unsafe_allow_html=True)
+        st.markdown(f"**WHAT WAS DECIDED?** {row.reason}")
+        st.markdown("**WHY WAS IT SELECTED?**")
+        factors = pd.DataFrame({"Decision factor": ["Route compatibility", "Deadline compliance", "Capacity availability", "Cost efficiency", "Priority satisfaction"], "Assessment": ["100%", f"{max(0, min(row.deadline_margin / max(row.eta_hours, 1), 1) * 100):.0f}%", "FEASIBLE", f"{max(0, (1 - row.cost / 8000) * 100):.0f}%", f"{row.priority_score * 100:.0f}%"]})
+        st.dataframe(factors, hide_index=True, use_container_width=True)
+        rejected = plan["rejected"]
+        if not rejected.empty:
+            rejected_for_shipment = rejected[rejected.shipment_id == row.shipment_id]
+            if not rejected_for_shipment.empty:
+                st.markdown("**WHY WERE ALTERNATIVES NOT SELECTED?**")
+                st.dataframe(rejected_for_shipment, hide_index=True, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
 elif page == "Network Intelligence":
     st.markdown("### Recovery Network")
@@ -383,9 +396,9 @@ elif page == "Network Intelligence":
     positions = {city: (i % 4, -(i // 4)) for i, city in enumerate(sorted(set(routes.origin) | set(routes.destination)))}
     for row in edge_counts.itertuples():
         x0, y0 = positions[row.origin]; x1, y1 = positions[row.destination]
-        fig.add_trace(go.Scatter(x=[x0, x1], y=[y0, y1], mode="lines", line={"width": 1 + row.vehicles, "color": "#8aa4aa"}, hovertext=f"{row.origin} → {row.destination} · {int(row.vehicles)} vehicles", showlegend=False))
-        fig.add_annotation(x=x1, y=y1, ax=x0, ay=y0, xref="x", yref="y", axref="x", ayref="y", text="", showarrow=True, arrowhead=3, arrowsize=1.2, arrowwidth=2, arrowcolor="#14566a")
-    fig.add_trace(go.Scatter(x=[positions[c][0] for c in positions], y=[positions[c][1] for c in positions], mode="markers", hovertext=list(positions), hovertemplate="%{hovertext}<extra></extra>", marker={"size": 24, "color": "#d47a3f", "line": {"width": 3, "color": "#ffffff"}}, showlegend=False))
+        fig.add_trace(go.Scatter(x=[x0, x1], y=[y0, y1], mode="lines", line={"width": 1.5, "color": "#8aa4aa"}, hovertext=f"{row.origin} → {row.destination} · {int(row.vehicles)} vehicles", showlegend=False))
+        fig.add_annotation(x=x1, y=y1, ax=x0, ay=y0, xref="x", yref="y", axref="x", ayref="y", text="", showarrow=True, arrowhead=3, arrowsize=1.5, arrowwidth=2, arrowcolor="#14566a")
+    fig.add_trace(go.Scatter(x=[positions[c][0] for c in positions], y=[positions[c][1] for c in positions], mode="markers", hovertext=list(positions), hovertemplate="%{hovertext}<extra></extra>", marker={"size": 12, "color": "#d47a3f", "line": {"width": 1.5, "color": "#ffffff"}}, showlegend=False))
     for city, (x_position, y_position) in positions.items():
         fig.add_annotation(x=x_position, y=y_position, text=f"<b>{city}</b>", showarrow=False, yshift=25, font={"family": "DM Sans, sans-serif", "size": 13, "color": "#17313d"}, bgcolor="#ffffff", bordercolor="#d47a3f", borderwidth=1, borderpad=4, opacity=0.98)
     fig.update_layout(height=600, xaxis={"visible": False, "range": [-0.7, 3.7]}, yaxis={"visible": False, "range": [-3.2, 0.9]}, plot_bgcolor="#e9f0f2", paper_bgcolor="#f3f6f8", margin={"l": 20, "r": 20, "t": 30, "b": 20}, hoverlabel={"bgcolor": "#092b3d", "font": {"color": "#ffffff"}})
