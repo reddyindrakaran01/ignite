@@ -19,8 +19,9 @@ def validate_data(shipments: pd.DataFrame, vehicles: pd.DataFrame, hubs: pd.Data
     if (vehicles["capacity_kg"] < vehicles["current_load_kg"]).any(): issues.append("Some vehicles have current load above capacity.")
     if not pd.to_datetime(shipments["deadline"], errors="coerce").notna().all(): issues.append("Some shipment deadlines are invalid.")
     route_pairs = set(zip(routes.origin, routes.destination))
-    invalid = [(row.current_location, row.destination) for row in shipments.itertuples() if (row.current_location, row.destination) not in route_pairs]
-    if invalid: issues.append(f"{len(invalid)} shipment route(s) do not have a direct route; transfer matching may still help.")
+    network_locations = {location for pair in route_pairs for location in pair}
+    invalid = [row.shipment_id for row in shipments.itertuples() if row.current_location not in network_locations or row.destination not in network_locations]
+    if invalid: issues.append(f"{len(invalid)} shipment location reference(s) are not present in the route network.")
     return issues
 
 
@@ -105,6 +106,35 @@ def candidates_for_shipment(shipment: pd.Series, vehicles: pd.DataFrame, hubs: p
             hub_cost = sum(hub_costs[hub] for hub in path[1:-1])
             candidates.append({"vehicle_id": " + ".join(item.vehicle_id for item in combination), "vehicle_ids": [item.vehicle_id for item in combination], "strategy": "ONE-HUB PIGGYBACK" if len(path) == 3 else "MULTI-HUB PIGGYBACK", "route": " -> ".join(path), "eta_hours": eta_hours, "capacity_available": min(capacities), "transport_cost": float(sum(item.transport_cost for item in combination)), "transfer_cost": float(hub_cost), "hub": " + ".join(path[1:-1])})
     return candidates
+
+
+def evaluate_candidates(shipment: pd.Series, vehicles: pd.DataFrame, hubs: pd.DataFrame, routes: pd.DataFrame, now: datetime | None = None) -> pd.DataFrame:
+    """Evaluate planner candidates with the same hard checks used by allocation."""
+    now = now or datetime.now()
+    rows = []
+    for candidate in candidates_for_shipment(shipment, vehicles, hubs, routes, now):
+        required = float(shipment.weight_kg)
+        cost = (candidate["transport_cost"] * required / max(candidate["capacity_available"], required)) + candidate["transfer_cost"]
+        margin = float(shipment.remaining_hours - candidate["eta_hours"])
+        reasons = []
+        if candidate["capacity_available"] < required:
+            reasons.append(f"capacity {candidate['capacity_available']:.0f}kg < {required:.0f}kg required")
+        if margin < 0:
+            reasons.append(f"ETA misses deadline by {abs(margin):.1f}h")
+        rows.append({**candidate, "cost": round(cost, 2), "deadline_margin": round(margin, 2), "required_capacity": required, "utilization": required / max(candidate["capacity_available"], 1), "feasible": not reasons, "reason": "; ".join(reasons) if reasons else "Route, capacity, availability, and deadline checks passed."})
+    return pd.DataFrame(rows)
+
+
+def run_simulation(shipments: pd.DataFrame, vehicles: pd.DataFrame, hubs: pd.DataFrame, routes: pd.DataFrame, weights: dict[str, float] | None = None, capacity_factor: float = 1.0, unavailable_vehicle_ids: list[str] | None = None, deadline_shift_hours: float = 0, route_cost_factor: float = 1.0, now: datetime | None = None) -> dict[str, Any]:
+    """Recalculate on copied frames so what-if controls never mutate source data."""
+    simulated_vehicles = vehicles.copy()
+    simulated_vehicles["capacity_kg"] = (simulated_vehicles["capacity_kg"] * capacity_factor).round().clip(lower=1)
+    if unavailable_vehicle_ids:
+        simulated_vehicles.loc[simulated_vehicles.vehicle_id.isin(unavailable_vehicle_ids), "vehicle_status"] = "Unavailable"
+    simulated_vehicles["transport_cost"] = simulated_vehicles["transport_cost"] * route_cost_factor
+    simulated_shipments = shipments.copy()
+    simulated_shipments["deadline"] = pd.to_datetime(simulated_shipments["deadline"]) - pd.to_timedelta(deadline_shift_hours, unit="h")
+    return allocate_plan(simulated_shipments, simulated_vehicles, hubs.copy(), routes.copy(), weights, now)
 
 
 def allocate_plan(shipments: pd.DataFrame, vehicles: pd.DataFrame, hubs: pd.DataFrame, routes: pd.DataFrame, weights: dict[str, float] | None = None, now: datetime | None = None) -> dict[str, Any]:

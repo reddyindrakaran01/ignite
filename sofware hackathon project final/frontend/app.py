@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -16,7 +17,9 @@ if str(ROOT) not in sys.path:
 
 from backend.agent import answer as answer_question
 from backend.data_loader import load_csv_data
-from backend.engine import DEFAULT_WEIGHTS, allocate_plan
+from backend.engine import DEFAULT_WEIGHTS, allocate_plan, evaluate_candidates, run_simulation
+from frontend.api_client import ApiError, RecoveryApi
+from frontend.data_input import bump_data_revision, frames_from_payload, handle_api_error, render_data_input_page
 from ui.visualization import fleet_chart, priority_chart, risk_chart, status_chart
 
 
@@ -110,8 +113,62 @@ h1, h2, h3, h4, h5, h6 { letter-spacing: 0; }
 .ai-answer-label { color: #67E8F9 !important; font-size: .7rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; margin-bottom: .55rem; }
 .ai-answer-body, .ai-answer-body p, .ai-answer-body li, .ai-answer-body strong { color: #F8FAFC !important; line-height: 1.6; }
 .ai-source-badge { display: inline-block; color: #0B1F33 !important; background: #86EFAC; border-radius: 999px; padding: .25rem .6rem; font-size: .7rem; font-weight: 800; margin-bottom: .6rem; }
+.login-card { background: #0B1F33; color: #F8FAFC; border-left: 5px solid #00A6A6; border-radius: 12px; padding: 1.4rem 1.5rem 1.25rem; margin-top: 2rem; }
+.login-card h1, .login-card h1 span { color: #F8FAFC !important; font-size: 1.55rem; line-height: 1.2; margin: .25rem 0 .55rem; }
+.login-card p, .login-card p span { color: #C7D8E5 !important; margin: 0; }
 </style>
 """, unsafe_allow_html=True)
+
+
+DEMO_USERS = {
+    "admin": {"password": "admin123", "role": "ADMIN"},
+    "manager": {"password": "manager123", "role": "MANAGER"},
+}
+ROLE_PAGES = {
+    "ADMIN": ["Control Tower", "Data Input", "Shipment Priority", "Recovery Planner", "Global Recovery Plan", "Decision Audit", "Network Intelligence", "What-If Simulator", "AI Logistics Analyzer", "Data Monitoring"],
+    "MANAGER": ["Control Tower", "Shipment Priority", "Recovery Planner", "Global Recovery Plan", "Decision Audit", "Network Intelligence", "What-If Simulator", "AI Logistics Analyzer"],
+}
+
+legacy_roles = {"Administrator": "ADMIN", "Logistics Manager": "MANAGER"}
+if st.session_state.get("role") in legacy_roles:
+    st.session_state.role = legacy_roles[st.session_state.role]
+
+
+def show_login() -> None:
+    left, center, right = st.columns([1, 1.15, 1])
+    with center:
+        st.markdown('<div class="login-card"><h1>Intelligent Shipment Recovery Control Tower</h1><p>Intelligent Shipment Piggybacking &amp; Recovery Platform</p></div>', unsafe_allow_html=True)
+        if st.session_state.get("auth_error"):
+            st.error(st.session_state.pop("auth_error"))
+        with st.form("demo_login"):
+            username = st.text_input("Username", placeholder="admin")
+            password = st.text_input("Password", type="password", placeholder="Enter demo password")
+            remember = st.checkbox("Remember Me")
+            submitted = st.form_submit_button("LOGIN TO CONTROL TOWER", width="stretch")
+            if submitted:
+                clean_username = username.strip().lower()
+                try:
+                    login_result = RecoveryApi().login(clean_username, password)
+                    st.session_state.authenticated = True
+                    st.session_state.user = login_result.get("username", clean_username)
+                    st.session_state.role = login_result["role"]
+                    st.session_state.access_token = login_result["access_token"]
+                    st.session_state.remember = remember
+                    st.rerun()
+                except ApiError as error:
+                    st.error(str(error))
+        st.caption("Demo accounts: admin / admin123 · manager / manager123")
+
+
+def restore_demo_session() -> None:
+    st.session_state.authenticated = True
+    st.session_state.user = "admin"
+    st.session_state.role = "ADMIN"
+    st.session_state.access_token = None
+
+
+if "authenticated" not in st.session_state:
+    restore_demo_session()
 
 
 def money(value: float) -> str:
@@ -120,6 +177,30 @@ def money(value: float) -> str:
 
 def kpi(label: str, value: str):
     st.markdown(f'<div class="kpi"><div class="kpi-label">{label}</div><div class="kpi-value">{value}</div></div>', unsafe_allow_html=True)
+
+
+def shipment_status_table(shipments_view: pd.DataFrame, plan: dict) -> pd.DataFrame:
+    recovered = set(plan["allocations"].shipment_id) if not plan["allocations"].empty else set()
+    escalated = set(plan["escalated"].shipment_id)
+    statuses = shipments_view.shipment_id.map(lambda value: "Recovered" if value in recovered else "Escalated" if value in escalated else "Recoverable")
+    result = shipments_view[["shipment_id", "origin", "destination", "current_location", "priority", "status", "deadline", "deadline_risk_label", "recommended_action"]].copy()
+    result["Recovery status"] = statuses
+    return result.rename(columns={"shipment_id": "Shipment ID", "origin": "Origin", "destination": "Destination", "current_location": "Current location", "priority": "Priority", "status": "Status", "deadline": "Deadline", "deadline_risk_label": "Delay risk", "recommended_action": "Recommended strategy"})
+
+
+def data_health(loaded_data: tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame], validation: list[str]) -> pd.DataFrame:
+    rows = []
+    for name, frame in zip(("shipments.csv", "vehicles.csv", "hubs.csv", "routes.csv"), loaded_data):
+        rows.append({"File": name, "Status": "Healthy" if not frame.empty else "Empty", "Records": len(frame), "Columns": len(frame.columns), "Last loaded": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "Validation": "Passed" if not validation else "Review"})
+    return pd.DataFrame(rows)
+
+
+def _json_records(frame: pd.DataFrame) -> list[dict[str, object]]:
+    serializable = frame.copy()
+    for column in serializable.columns:
+        if pd.api.types.is_datetime64_any_dtype(serializable[column]):
+            serializable[column] = serializable[column].dt.strftime("%Y-%m-%dT%H:%M:%S")
+    return serializable.astype(object).where(pd.notna(serializable), None).to_dict(orient="records")
 
 
 def network_figure(routes: pd.DataFrame, vehicles: pd.DataFrame):
@@ -160,27 +241,50 @@ def build_dispatch_views(shipments: pd.DataFrame, vehicles: pd.DataFrame, alloca
 
 
 @st.cache_data(show_spinner=False)
-def load_data(demo: bool):
+def load_data(demo: bool, access_token: str | None = None, data_revision: int = 0):
+    if access_token:
+        try:
+            payload = RecoveryApi(token=access_token).get_data()
+            frames = frames_from_payload(payload)
+            return tuple(frames[name] for name in ("shipments", "vehicles", "hubs", "routes"))
+        except ApiError as error:
+            if "Session expired" in str(error):
+                raise
     return load_csv_data(demo=demo)
 
 
 @st.cache_data(show_spinner=False)
-def build_plan(demo: bool, weight_values: tuple[tuple[str, float], ...]):
-    loaded_data = load_data(demo)
+def build_plan(demo: bool, weight_values: tuple[tuple[str, float], ...], access_token: str | None = None, data_revision: int = 0):
+    loaded_data = load_data(demo, access_token, data_revision)
     configured_weights = dict(weight_values)
+    if access_token:
+        try:
+            api = RecoveryApi(token=access_token)
+            datasets = {name: _json_records(frame) for name, frame in zip(("shipments", "vehicles", "hubs", "routes"), loaded_data)}
+            response = api.plan(datasets, configured_weights)
+            frame_keys = ("shipments", "allocations", "candidate_options", "escalated", "rejected", "vehicles")
+            api_plan = {key: pd.DataFrame(response[key]) if key in frame_keys and isinstance(response.get(key), list) else response.get(key) for key in response}
+            for key in frame_keys:
+                if key not in api_plan:
+                    api_plan[key] = pd.DataFrame()
+            if not isinstance(api_plan.get("validation"), list):
+                api_plan["validation"] = []
+            return loaded_data, api_plan
+        except ApiError as error:
+            if "Session expired" in str(error):
+                raise
     return loaded_data, allocate_plan(*loaded_data, configured_weights)
 
 
 with st.sidebar:
     st.markdown('<div class="brand-mark">◈ RELAYX</div><div class="brand-sub">AI SHIPMENT RECOVERY</div>', unsafe_allow_html=True)
-    st.markdown('<div class="status-online">● SYSTEM ONLINE</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="status-online">● SYSTEM ONLINE</div><div class="sidebar-status">Signed in as <strong>{st.session_state.user}</strong><br>{st.session_state.role}</div>', unsafe_allow_html=True)
     st.divider()
     st.markdown('<div class="sidebar-section">Operations workspace</div>', unsafe_allow_html=True)
-    navigation_labels = ["▦  Control Tower", "◉  Shipment Priority", "⇄  Recovery Planner", "▤  Global Recovery Plan", "✓  Decision Audit", "⌁  Network Intelligence", "◌  What-If Simulator", "✦  AI Logistics Analyzer"]
-    navigation_target = {
-        "▦  Control Tower": "Control Tower", "◉  Shipment Priority": "Shipment Priority", "⇄  Recovery Planner": "Recovery Planner", "▤  Global Recovery Plan": "Global Recovery Plan",
-        "✓  Decision Audit": "Decision Audit", "⌁  Network Intelligence": "Network Intelligence", "◌  What-If Simulator": "What-If Simulator", "✦  AI Logistics Analyzer": "AI Logistics Analyzer",
-    }
+    icons = {"Control Tower": "▦", "Data Input": "⇧", "Shipment Priority": "◉", "Recovery Planner": "⇄", "Global Recovery Plan": "▤", "Decision Audit": "✓", "Network Intelligence": "⌁", "What-If Simulator": "◌", "AI Logistics Analyzer": "✦", "Data Monitoring": "⚙"}
+    permitted_pages = ROLE_PAGES[st.session_state.role]
+    navigation_labels = [f"{icons[item]}  {item}" for item in permitted_pages]
+    navigation_target = {f"{icons[item]}  {item}": item for item in permitted_pages}
     page = navigation_target[st.radio("Operations workspace", navigation_labels, label_visibility="collapsed")]
     st.divider()
     st.markdown('<div class="sidebar-section">Workspace controls</div>', unsafe_allow_html=True)
@@ -188,9 +292,17 @@ with st.sidebar:
     with st.expander("Optimization weights"):
         weights = {key: st.slider(key.title(), 0.0, 1.0, float(value), 0.05) for key, value in DEFAULT_WEIGHTS.items()}
     st.markdown('<div class="sidebar-section">System status</div><div class="sidebar-status"><strong>● Optimization engine online</strong><br>● Live simulation data<br>● Analyzer ready</div>', unsafe_allow_html=True)
+    if st.button("LOG OUT", width="stretch"):
+        for key in ("authenticated", "user", "role", "remember", "ai_question", "ai_answer", "ai_source", "access_token", "backend_dataset"):
+            st.session_state.pop(key, None)
+        restore_demo_session()
+        st.rerun()
 
 try:
-    (shipments, vehicles, hubs, routes), plan = build_plan(False, tuple(sorted(weights.items())))
+    (shipments, vehicles, hubs, routes), plan = build_plan(False, tuple(sorted(weights.items())), st.session_state.get("access_token"), int(st.session_state.get("data_revision", 0)))
+except ApiError as error:
+    handle_api_error(error)
+    st.stop()
 except Exception as error:
     st.error(f"Recovery analysis could not be completed: {error}")
     st.info("Please verify the shipment, vehicle, route, and network data, then restart the workspace.")
@@ -209,6 +321,7 @@ available_vehicles = int((vehicles.vehicle_status != "Unavailable").sum())
 utilization = float(((vehicles.current_load_kg.sum() + allocations.weight_kg.sum()) / vehicles.capacity_kg.sum()) * 100) if not allocations.empty else float((vehicles.current_load_kg.sum() / vehicles.capacity_kg.sum()) * 100)
 
 module_descriptions = {
+    "Data Input": ("DATA INPUT", "Manually enter records or upload CSVs through the authenticated API.", "#22D3EE"),
     "Shipment Priority": ("SHIPMENT PRIORITY", "Rank misplaced shipments by urgency, risk, value and deadline.", "#2563EB"),
     "Recovery Planner": ("RECOVERY PLANNER", "Compare feasible direct, one-hop, and multi-hub recovery opportunities.", "#00A6A6"),
     "Global Recovery Plan": ("GLOBAL RECOVERY PLAN", "See the fleet-wide allocation across shared capacity.", "#16A34A"),
@@ -216,6 +329,7 @@ module_descriptions = {
     "Network Intelligence": ("NETWORK INTELLIGENCE", "Explore active corridors, hubs, vehicles and route risk.", "#22D3EE"),
     "What-If Simulator": ("WHAT-IF SIMULATOR", "Stress-test the recovery network against disruption.", "#F59E0B"),
     "AI Logistics Analyzer": ("AI LOGISTICS ANALYZER", "Ask the agent about the calculated recovery network.", "#22D3EE"),
+    "Data Monitoring": ("DATA MONITORING", "Inspect loaded records and validation status.", "#F59E0B"),
 }
 if page in module_descriptions:
     module_title, module_description, module_color = module_descriptions[page]
@@ -230,7 +344,7 @@ if page == "Control Tower":
     network_column, queue_column = st.columns([7, 5], gap="medium")
     with network_column:
         st.markdown('<div class="workspace-card"><div class="workspace-title">Network recovery overview · active routes and recovery paths</div>', unsafe_allow_html=True)
-        st.plotly_chart(network_figure(routes, vehicles), use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(network_figure(routes, vehicles), width="stretch", config={"displayModeBar": False})
         st.markdown('</div>', unsafe_allow_html=True)
     with queue_column:
         st.markdown('<div class="workspace-card"><div class="workspace-title">Priority queue · earliest operational attention</div>', unsafe_allow_html=True)
@@ -243,17 +357,18 @@ if page == "Control Tower":
     st.write("")
     left, right = st.columns(2)
     with left:
-        st.plotly_chart(status_chart(plan), use_container_width=True)
+        st.plotly_chart(status_chart(plan), width="stretch")
     with right:
-        st.plotly_chart(priority_chart(shipments_view), use_container_width=True)
+        st.plotly_chart(priority_chart(shipments_view), width="stretch")
     left, right = st.columns(2)
     with left:
-        st.plotly_chart(risk_chart(shipments_view), use_container_width=True)
+        st.plotly_chart(risk_chart(shipments_view), width="stretch")
     with right:
-        st.plotly_chart(fleet_chart(vehicles), use_container_width=True)
+        st.plotly_chart(fleet_chart(vehicles), width="stretch")
     impact_left, impact_right = st.columns(2)
     with impact_left:
         st.markdown("#### BUSINESS IMPACT")
+<<<<<<< HEAD
         st.dataframe(pd.DataFrame({"Metric": ["Capacity reused", "Dedicated trips avoided", "On-time recovery", "Estimated recovery cost"], "Value": [f"{allocations.weight_kg.sum() if not allocations.empty else 0:,.0f} kg", f"{recovered_count}", f"{(allocations.deadline_margin.ge(0).mean() * 100 if not allocations.empty else 0):.1f}%", money(plan["total_cost"])]}).astype(str), hide_index=True, use_container_width=True)
     with impact_right:
         st.markdown("#### RECOVERY IMPACT")
@@ -292,6 +407,37 @@ elif page == "Shipment Priority":
         vehicle_table["selection_reason"] = vehicle_table.apply(lambda row: f"{row.available_capacity_kg:.0f}kg available · {row.vehicle_status.lower()} · estimated cost {money(row.transport_cost)}", axis=1)
         vehicle_table = vehicle_table.rename(columns={"vehicle_id": "Candidate vehicle", "vehicle_status": "Vehicle availability", "available_capacity_kg": "Capacity available (kg)", "eta": "Estimated arrival", "route_destination": "Destination", "selection_reason": "Selection rationale"})
         st.dataframe(vehicle_table[["Vehicle priority", "Candidate vehicle", "route_compatibility", "Vehicle availability", "Capacity available (kg)", "transport_cost", "Estimated arrival", "Selection rationale"]], use_container_width=True, hide_index=True, column_config={"transport_cost": st.column_config.NumberColumn("Estimated transport cost", format="₹%,.0f")})
+=======
+        st.dataframe(pd.DataFrame({"Metric": ["Capacity reused", "Dedicated trips avoided", "On-time recovery", "Estimated recovery cost"], "Value": [f"{allocations.weight_kg.sum() if not allocations.empty else 0:,.0f} kg", str(recovered_count), f"{(allocations.deadline_margin.ge(0).mean() * 100 if not allocations.empty else 0):.1f}%", money(plan["total_cost"])]}), hide_index=True, width="stretch")
+    with impact_right:
+        st.markdown("#### RECOVERY IMPACT")
+        st.dataframe(pd.DataFrame({"Metric": ["Shipments considered", "Feasible / recovered", "Shipments escalated", "Vehicles used", "One-hop transfers"], "Value": [str(len(shipments_view)), f"{recovered_count} / {len(shipments_view)}", str(len(plan["escalated"])), str(allocations.vehicle_id.nunique() if not allocations.empty else 0), str(int(allocations.strategy.eq("ONE-HUB PIGGYBACK").sum()) if not allocations.empty else 0)]}), hide_index=True, width="stretch")
+    st.markdown("#### Shipment status monitor")
+    status_view = shipment_status_table(shipments_view, plan)
+    status_search = st.text_input("Search shipment status", placeholder="Shipment, location, priority, or status")
+    if status_search:
+        status_view = status_view[status_view.astype(str).apply(lambda column: column.str.contains(status_search, case=False, na=False)).any(axis=1)]
+    st.dataframe(status_view, width="stretch", hide_index=True)
+
+elif page == "Shipment Priority":
+    st.markdown("### Shipment Priority Center")
+    st.caption("Rank misplaced shipments using urgency, deadline pressure, business priority, delay probability, value, and route risk.")
+    filters = st.columns(4)
+    with filters[0]: priority_filter = st.multiselect("Filter by recovery priority", sorted(shipments_view.priority.unique()))
+    with filters[1]: risk_filter = st.multiselect("Filter by recovery risk", sorted(shipments_view.deadline_risk_label.unique()))
+    with filters[2]: destination_filter = st.multiselect("Filter by destination", sorted(shipments_view.destination.unique()))
+    with filters[3]: min_weight = st.number_input("Minimum shipment weight (kg)", 0, int(shipments_view.weight_kg.max()), 0)
+    filtered = shipments_view.copy()
+    if priority_filter: filtered = filtered[filtered.priority.isin(priority_filter)]
+    if risk_filter: filtered = filtered[filtered.deadline_risk_label.isin(risk_filter)]
+    if destination_filter: filtered = filtered[filtered.destination.isin(destination_filter)]
+    filtered = filtered[filtered.weight_kg >= min_weight]
+    display = filtered.reset_index(drop=True)
+    display.insert(0, "Rank", range(1, len(display) + 1))
+    display = display.rename(columns={"current_location": "Current location", "destination": "Destination", "weight_kg": "Weight (kg)", "priority": "Recovery priority", "deadline": "Deadline", "remaining_hours": "Time to deadline (hrs)", "delay_probability": "Delay probability", "deadline_risk_label": "Recovery risk", "priority_score": "Priority score", "recommended_action": "Recommended action"})
+    st.dataframe(display[["Rank", "shipment_id", "Current location", "Destination", "Weight (kg)", "Recovery priority", "Deadline", "Time to deadline (hrs)", "Delay probability", "Recovery risk", "Priority score", "Recommended action"]], width="stretch", hide_index=True, column_config={"Priority score": st.column_config.ProgressColumn("Contribution to priority score", min_value=0, max_value=1), "Delay probability": st.column_config.ProgressColumn("Delay probability", min_value=0, max_value=1)})
+    st.caption("Recovery priority is calculated from urgency, deadline pressure, business priority, delay probability, shipment value, and route risk.")
+>>>>>>> 1cbcf67 (Add changes to project)
 
 elif page == "Recovery Planner":
     selected_id = st.selectbox("Select shipment for recovery", shipments_view.shipment_id.tolist())
@@ -299,6 +445,7 @@ elif page == "Recovery Planner":
     a, b, c, d = st.columns(4)
     a.metric("Shipment", selected_id); b.metric("Priority", shipment.priority); c.metric("Weight", f"{shipment.weight_kg:.0f} kg"); d.metric("Deadline risk", shipment.deadline_risk_label)
     st.write(f"Current route: **{shipment.current_location} → {shipment.destination}** · Time to deadline: **{shipment.remaining_hours:.1f} hrs** · Delay probability: **{shipment.delay_probability:.0%}**")
+<<<<<<< HEAD
     options = []
     rejected_options = []
     from backend.engine import candidates_for_shipment
@@ -334,11 +481,21 @@ elif page == "Recovery Planner":
             st.markdown(f"**Why intermediate hubs were used:** Direct routes were unavailable or failed ETA constraints. A {best.strategy.lower()} through **{best.hub}** was successfully added because it satisfies the ETA and capacity constraints.")
         else:
             st.markdown("**Why this opportunity was selected:** It satisfies route, capacity, and deadline constraints, then ranks highest on deadline safety, priority satisfaction, estimated cost, and utilization.")
+=======
+    options_df = evaluate_candidates(shipment, vehicles, hubs, routes)
+    feasible_options = options_df[options_df.feasible].copy() if not options_df.empty else options_df
+    if not feasible_options.empty:
+        candidate_view = feasible_options[["vehicle_id", "strategy", "route", "hub", "capacity_available", "required_capacity", "cost", "eta_hours", "deadline_margin", "utilization", "reason"]].rename(columns={"vehicle_id": "Candidate vehicle", "strategy": "Recovery strategy", "route": "Route", "hub": "Transfer hub", "capacity_available": "Capacity available (kg)", "required_capacity": "Required capacity (kg)", "cost": "Recovery cost", "eta_hours": "Estimated arrival (hrs)", "deadline_margin": "Deadline margin (hrs)", "utilization": "Utilization", "reason": "Feasibility"})
+        st.dataframe(candidate_view, width="stretch", hide_index=True)
+        best = feasible_options.iloc[0]
+        st.success(f"Selected recovery opportunity: {best.vehicle_id} · {best.strategy} · {money(best.cost)} estimated · {best.eta_hours:.1f} hrs to arrival")
+        st.markdown(f"**Why this opportunity was selected:** {best.reason}")
+>>>>>>> 1cbcf67 (Add changes to project)
     else:
         st.markdown('<div class="planner-state">No feasible piggyback option found for this shipment.</div>', unsafe_allow_html=True)
-        if rejected_options:
+        if not options_df.empty:
             st.markdown(f'<div class="planner-note"><strong>Why this happened:</strong> every candidate fails a hard recovery constraint. This shipment has {shipment.remaining_hours:.1f} hours to deadline; recovery requires sufficient capacity and an arrival before the deadline.</div>', unsafe_allow_html=True)
-            st.dataframe(pd.DataFrame(rejected_options), use_container_width=True, hide_index=True)
+            st.dataframe(options_df[["vehicle_id", "strategy", "route", "hub", "capacity_available", "required_capacity", "cost", "eta_hours", "deadline_margin", "reason"]], width="stretch", hide_index=True)
         else:
             st.markdown('<div class="planner-note"><strong>Why this happened:</strong> no compatible vehicle or one-hub route was found from the shipment\'s current location.</div>', unsafe_allow_html=True)
         st.info("Available alternatives: dedicated vehicle, next available route, alternate hub, or manual logistics intervention.")
@@ -349,18 +506,24 @@ elif page == "Global Recovery Plan":
     a, b, c, d = st.columns(4)
     a.metric("Shipments recovered", recovered_count); b.metric("Shipments escalated", len(plan["escalated"])); c.metric("Recovery cost", money(plan["total_cost"])); d.metric("Estimated cost impact", money(plan["savings"]))
     if not allocations.empty:
+<<<<<<< HEAD
         allocation_view = allocations[["shipment_id", "vehicle_id", "strategy", "route", "hub", "weight_kg", "eta_hours", "deadline_margin", "cost", "priority"]].copy()
         allocation_view["hub"] = allocation_view["hub"].fillna("-")
         allocation_view.columns = ["Shipment", "Vehicle(s)", "Strategy", "Route", "Transfer Hub(s)", "Weight kg", "ETA hrs", "Margin hrs", "Est. cost", "Priority"]
         st.dataframe(allocation_view, use_container_width=True, hide_index=True, column_config={"Est. cost": st.column_config.NumberColumn(format="₹%,.0f"), "ETA hrs": st.column_config.NumberColumn(format="%.1f"), "Margin hrs": st.column_config.NumberColumn(format="%.1f")})
+=======
+        allocation_view = allocations[["shipment_id", "vehicle_id", "strategy", "route", "weight_kg", "eta_hours", "deadline_margin", "cost", "priority"]].copy()
+        allocation_view.columns = ["Shipment", "Vehicle(s)", "Strategy", "Route", "Weight kg", "ETA hrs", "Margin hrs", "Est. cost", "Priority"]
+        st.dataframe(allocation_view, width="stretch", hide_index=True, column_config={"Est. cost": st.column_config.NumberColumn(format="₹%,.0f"), "ETA hrs": st.column_config.NumberColumn(format="%.1f"), "Margin hrs": st.column_config.NumberColumn(format="%.1f")})
+>>>>>>> 1cbcf67 (Add changes to project)
         with st.expander("Inspect calculated allocation details"):
-            st.dataframe(allocations[["shipment_id", "vehicle_id", "strategy", "route", "cost", "eta_hours", "deadline_margin", "score", "reason"]], use_container_width=True, hide_index=True)
+            st.dataframe(allocations[["shipment_id", "vehicle_id", "strategy", "route", "cost", "eta_hours", "deadline_margin", "score", "reason"]], width="stretch", hide_index=True)
     if not plan["escalated"].empty:
         st.markdown("#### Escalated shipments")
-        st.dataframe(plan["escalated"][["shipment_id", "destination", "weight_kg", "priority", "reason"]].rename(columns={"shipment_id": "Shipment ID", "destination": "Destination", "weight_kg": "Weight (kg)", "priority": "Recovery priority", "reason": "Escalation reason"}), use_container_width=True, hide_index=True)
+        st.dataframe(plan["escalated"][["shipment_id", "destination", "weight_kg", "priority", "reason"]].rename(columns={"shipment_id": "Shipment ID", "destination": "Destination", "weight_kg": "Weight (kg)", "priority": "Recovery priority", "reason": "Escalation reason"}), width="stretch", hide_index=True)
     if not plan["rejected"].empty:
         with st.expander("Inspect alternative candidate evaluations"):
-            st.dataframe(plan["rejected"], use_container_width=True, hide_index=True)
+            st.dataframe(plan["rejected"], width="stretch", hide_index=True)
 
 elif page == "Decision Audit":
     st.markdown("### Decision Audit")
@@ -371,22 +534,61 @@ elif page == "Decision Audit":
         audit_rows = []
         for row in allocations.itertuples():
             audit_rows.append({"Shipment": row.shipment_id, "Selected vehicle(s)": row.vehicle_id, "Strategy": row.strategy, "Cost": money(row.cost), "ETA": f"{row.eta_hours:.1f} hrs", "Deadline margin": f"{row.deadline_margin:.1f} hrs", "Priority score": f"{row.priority_score:.2f}", "Status": "RECOVERED"})
-        st.dataframe(pd.DataFrame(audit_rows), use_container_width=True, hide_index=True)
-        selected_audit_id = st.selectbox("Select shipment to inspect audit details", allocations.shipment_id.tolist())
+        st.dataframe(pd.DataFrame(audit_rows), width="stretch", hide_index=True)
+
+        selected_audit_id = st.selectbox(
+            "Select shipment to inspect audit details",
+            allocations.shipment_id.tolist()
+        )
+
         row = allocations[allocations.shipment_id == selected_audit_id].iloc[0]
-        st.markdown(f"#### Audit Details: {row.shipment_id} · {row.vehicle_id} · {row.strategy}")
+
+        st.markdown(
+            f"#### Audit Details: {row.shipment_id} · {row.vehicle_id} · {row.strategy}"
+        )
+
         st.markdown('<div class="audit-card">', unsafe_allow_html=True)
+
         st.markdown(f"**WHAT WAS DECIDED?** {row.reason}")
+
         st.markdown("**WHY WAS IT SELECTED?**")
-        factors = pd.DataFrame({"Decision factor": ["Route compatibility", "Deadline compliance", "Capacity availability", "Cost efficiency", "Priority satisfaction"], "Assessment": ["100%", f"{max(0, min(row.deadline_margin / max(row.eta_hours, 1), 1) * 100):.0f}%", "FEASIBLE", f"{max(0, (1 - row.cost / 8000) * 100):.0f}%", f"{row.priority_score * 100:.0f}%"]})
-        st.dataframe(factors, hide_index=True, use_container_width=True)
+
+        factors = pd.DataFrame({
+            "Decision factor": [
+                "Route compatibility",
+                "Deadline compliance",
+                "Capacity availability",
+                "Cost efficiency",
+                "Priority satisfaction"
+            ],
+            "Assessment": [
+                "100%",
+                f"{max(0, min(row.deadline_margin / max(row.eta_hours, 1), 1) * 100):.0f}%",
+                "FEASIBLE",
+                f"{max(0, (1 - row.cost / 8000) * 100):.0f}%",
+                f"{row.priority_score * 100:.0f}%"
+            ]
+        })
+
+        st.dataframe(factors, hide_index=True, width="stretch")
+
         rejected = plan["rejected"]
+
         if not rejected.empty:
-            rejected_for_shipment = rejected[rejected.shipment_id == row.shipment_id]
+            rejected_for_shipment = rejected[
+                rejected.shipment_id == row.shipment_id
+            ]
+
             if not rejected_for_shipment.empty:
                 st.markdown("**WHY WERE ALTERNATIVES NOT SELECTED?**")
-                st.dataframe(rejected_for_shipment, hide_index=True, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+
+                st.dataframe(
+                    rejected_for_shipment,
+                    hide_index=True,
+                    width="stretch"
+                )
+
+        st.markdown("</div>", unsafe_allow_html=True)
 
 elif page == "Network Intelligence":
     st.markdown("### Recovery Network")
@@ -402,31 +604,49 @@ elif page == "Network Intelligence":
     for city, (x_position, y_position) in positions.items():
         fig.add_annotation(x=x_position, y=y_position, text=f"<b>{city}</b>", showarrow=False, yshift=25, font={"family": "DM Sans, sans-serif", "size": 13, "color": "#17313d"}, bgcolor="#ffffff", bordercolor="#d47a3f", borderwidth=1, borderpad=4, opacity=0.98)
     fig.update_layout(height=600, xaxis={"visible": False, "range": [-0.7, 3.7]}, yaxis={"visible": False, "range": [-3.2, 0.9]}, plot_bgcolor="#e9f0f2", paper_bgcolor="#f3f6f8", margin={"l": 20, "r": 20, "t": 30, "b": 20}, hoverlabel={"bgcolor": "#092b3d", "font": {"color": "#ffffff"}})
-    st.plotly_chart(fig, use_container_width=True)
-    st.dataframe(edge_counts[["route_id", "origin", "destination", "distance_km", "estimated_hours", "delay_risk", "vehicles"]], use_container_width=True, hide_index=True)
+    st.plotly_chart(fig, width="stretch")
+    st.dataframe(edge_counts[["route_id", "origin", "destination", "distance_km", "estimated_hours", "delay_risk", "vehicles"]], width="stretch", hide_index=True)
 
 elif page == "What-If Simulator":
     st.markdown("### Scenario Simulator")
     st.caption("Test network disruptions and see how the recovery plan changes.")
     vehicle_change = st.selectbox("Vehicle unavailable", ["None"] + vehicles.vehicle_id.tolist())
     capacity_loss = st.slider("Reduce vehicle capacity (%)", 0, 70, 0, 5)
-    urgent = st.checkbox("Urgent shipment arrives: 80 kg, Bengaluru → Chennai")
     shorter_deadlines = st.slider("Shorten shipment deadlines (hrs)", 0, 12, 0)
+    cost_change = st.slider("Increase transport cost (%)", 0, 50, 0, 5)
     if st.button("Recalculate recovery plan", type="primary"):
-        simulated_vehicles = vehicles.copy()
-        if vehicle_change != "None": simulated_vehicles.loc[simulated_vehicles.vehicle_id == vehicle_change, "vehicle_status"] = "Unavailable"
-        simulated_vehicles["capacity_kg"] = (simulated_vehicles.capacity_kg * (1 - capacity_loss / 100)).round().astype(int)
-        simulated_shipments = shipments.copy()
-        if shorter_deadlines: simulated_shipments["deadline"] = pd.to_datetime(simulated_shipments.deadline) - pd.to_timedelta(shorter_deadlines, unit="h")
-        if urgent:
-            row = simulated_shipments.iloc[0].copy(); row["shipment_id"] = "URGENT-NEW"; row["weight_kg"] = 80; row["priority"] = "Critical"; row["deadline"] = pd.Timestamp.now() + pd.Timedelta(hours=5); simulated_shipments = pd.concat([simulated_shipments, pd.DataFrame([row])], ignore_index=True)
-        simulated = allocate_plan(simulated_shipments, simulated_vehicles, hubs, routes, weights)
+        simulation_args = {"shipments": _json_records(shipments), "vehicles": _json_records(vehicles), "hubs": _json_records(hubs), "routes": _json_records(routes), "weights": weights, "capacity_factor": 1 - capacity_loss / 100, "unavailable_vehicle_ids": [] if vehicle_change == "None" else [vehicle_change], "deadline_shift_hours": shorter_deadlines, "route_cost_factor": 1 + cost_change / 100}
+        try:
+            if st.session_state.get("access_token"):
+                simulated = {key: pd.DataFrame(value) if isinstance(value, list) else value for key, value in RecoveryApi(token=st.session_state.access_token).simulation(simulation_args).items()}
+            else:
+                simulated = run_simulation(shipments, vehicles, hubs, routes, weights, capacity_factor=1 - capacity_loss / 100, unavailable_vehicle_ids=[] if vehicle_change == "None" else [vehicle_change], deadline_shift_hours=shorter_deadlines, route_cost_factor=1 + cost_change / 100)
+        except ApiError as error:
+            st.warning(str(error))
+            simulated = run_simulation(shipments, vehicles, hubs, routes, weights, capacity_factor=1 - capacity_loss / 100, unavailable_vehicle_ids=[] if vehicle_change == "None" else [vehicle_change], deadline_shift_hours=shorter_deadlines, route_cost_factor=1 + cost_change / 100)
         before_recovery = len(plan["allocations"]); after_recovery = len(simulated["allocations"])
         st.markdown("#### Scenario impact")
         x, y, z = st.columns(3); x.metric("Recovered shipments", after_recovery, after_recovery - before_recovery); y.metric("Escalations", len(simulated["escalated"]), len(simulated["escalated"]) - len(plan["escalated"])); z.metric("Estimated recovery cost", money(simulated["total_cost"]), money(simulated["total_cost"] - plan["total_cost"]))
-        st.dataframe(simulated["allocations"][["vehicle_id", "shipment_id", "strategy", "cost", "deadline_margin"]], use_container_width=True, hide_index=True)
+        st.dataframe(simulated["allocations"][["vehicle_id", "shipment_id", "strategy", "cost", "deadline_margin"]], width="stretch", hide_index=True)
         st.info("The recovery plan was recalculated globally. Changes can cascade because vehicle capacity is shared across shipments.")
 
+elif page == "Data Monitoring":
+    st.markdown("### System and data monitoring")
+    st.caption("Administrator view of the CSV sources and deterministic validation contract.")
+    if st.button("Refresh data"):
+        bump_data_revision()
+        load_data.clear()
+        build_plan.clear()
+        st.rerun()
+    st.dataframe(data_health((shipments, vehicles, hubs, routes), plan["validation"]), width="stretch", hide_index=True)
+    if plan["validation"]:
+        st.warning(" · ".join(plan["validation"]))
+    else:
+        st.success("All loaded datasets passed the backend validation checks.")
+    st.markdown("#### Loaded schema")
+    st.dataframe(pd.DataFrame({"Dataset": ["shipments", "vehicles", "hubs", "routes"], "Columns": [", ".join(frame.columns) for frame in (shipments, vehicles, hubs, routes)]}), width="stretch", hide_index=True)
+elif page == "Data Input":
+    render_data_input_page((shipments, vehicles, hubs, routes))
 else:
     st.markdown("### Ask the Recovery Analyst")
     st.write("Ask about recovery decisions, shipment risk, fleet capacity, route constraints, or scenario impact.")
@@ -434,7 +654,15 @@ else:
     question = st.chat_input("Ask about the current recovery plan...")
     if question:
         st.session_state.ai_question = question
-        st.session_state.ai_answer, st.session_state.ai_source = answer_question(question, plan, vehicles, hubs, routes)
+        try:
+            if st.session_state.get("access_token"):
+                api_payload = {key: _json_records(value) if isinstance(value, pd.DataFrame) else value for key, value in plan.items()}
+                ai_result = RecoveryApi(token=st.session_state.access_token).ai(question, api_payload)
+                st.session_state.ai_answer, st.session_state.ai_source = ai_result["answer"], ai_result["source"]
+            else:
+                st.session_state.ai_answer, st.session_state.ai_source = answer_question(question, plan, vehicles, hubs, routes)
+        except ApiError:
+            st.session_state.ai_answer, st.session_state.ai_source = answer_question(question, plan, vehicles, hubs, routes)
     if st.session_state.get("ai_question"):
         st.markdown(f'<div class="ai-question-card"><div class="ai-question-label">Your latest question</div><div class="ai-question-text">{st.session_state.ai_question}</div></div>', unsafe_allow_html=True)
         answer_html = html.escape(str(st.session_state.ai_answer)).replace("\n", "<br>")
